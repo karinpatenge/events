@@ -31,7 +31,7 @@ create index points_geom_sidx on points(geom)
 indextype is mdsys.spatial_index_v2
 parameters ('LAYER_GTYPE=POINT');
 
--- Function to insert random point geometries located in the Netherlands
+-- Procedure to insert random point geometries located in the Netherlands
 declare
   type t_points is table of points%ROWTYPE;
   l_tab t_points := t_points();
