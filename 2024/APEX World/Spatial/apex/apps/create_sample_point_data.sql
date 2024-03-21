@@ -51,7 +51,7 @@ begin
   select nvl(max(id),1) + 1 into l_curr_id from points;
 
   -- Populate sample as collection
-  for i in 1 .. l_size LOOP
+  for i in 1 .. l_size loop
 
     l_curr_lon := round(dbms_random.value(51.3,52.3),10);
     l_curr_lat := round(dbms_random.value(4.7,5.7),10);
