@@ -33,7 +33,7 @@ prompt APPLICATION 47931 - Custom Map Backgrounds in APEX 23.2
 -- Application Export:
 --   Application:     47931
 --   Name:            Custom Map Backgrounds in APEX 23.2
---   Date and Time:   14:58 Thursday March 21, 2024
+--   Date and Time:   13:10 Friday March 22, 2024
 --   Exported By:     KARIN.PATENGE@ORACLE.COM
 --   Flashback:       0
 --   Export Type:     Application Export
@@ -70,6 +70,7 @@ prompt APPLICATION 47931 - Custom Map Backgrounds in APEX 23.2
 --       Reports:
 --       E-Mail:
 --     Supporting Objects:  Included
+--       Install scripts:          1
 --   Version:         23.2.4
 --   Instance ID:     63102946836549
 --
@@ -121,7 +122,7 @@ wwv_imp_workspace.create_flow(
 ,p_substitution_string_02=>'LOGO'
 ,p_substitution_value_02=>'Custom Map Backgrounds'
 ,p_last_updated_by=>'KARIN.PATENGE@ORACLE.COM'
-,p_last_upd_yyyymmddhh24miss=>'20240321145643'
+,p_last_upd_yyyymmddhh24miss=>'20240322130917'
 ,p_file_prefix => nvl(wwv_flow_application_install.get_static_app_file_prefix,'')
 ,p_files_version=>6
 ,p_print_server_type=>'INSTANCE'
@@ -793,6 +794,11 @@ wwv_flow_imp_page.create_page_group(
  p_id=>wwv_flow_imp.id(12220360928378834086)
 ,p_group_name=>'Administration'
 );
+end;
+/
+prompt --application/comments
+begin
+null;
 end;
 /
 prompt --application/shared_components/navigation/breadcrumbs/breadcrumb
@@ -14590,6 +14596,11 @@ begin
 null;
 end;
 /
+prompt --application/shared_components/globalization/translations
+begin
+null;
+end;
+/
 prompt --application/shared_components/logic/build_options
 begin
 wwv_flow_imp_shared.create_build_option(
@@ -18028,7 +18039,7 @@ wwv_flow_imp_page.create_page(
 ,p_protection_level=>'C'
 ,p_page_component_map=>'19'
 ,p_last_updated_by=>'KARIN.PATENGE@ORACLE.COM'
-,p_last_upd_yyyymmddhh24miss=>'20240321135040'
+,p_last_upd_yyyymmddhh24miss=>'20240322130917'
 );
 wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id(13094091732676352915)
@@ -18079,7 +18090,7 @@ wwv_flow_imp_page.create_map_region_layer(
 '    name,',
 '    geom',
 'from',
-'    points'))
+'    sdo_sample_points'))
 ,p_has_spatial_index=>true
 ,p_pk_column=>'ID'
 ,p_geometry_column_data_type=>'SDO_GEOMETRY'
@@ -18158,7 +18169,7 @@ wwv_flow_imp_page.create_map_region_layer(
 '    name,',
 '    geom',
 'from',
-'    points'))
+'    sdo_sample_points'))
 ,p_has_spatial_index=>true
 ,p_pk_column=>'ID'
 ,p_geometry_column_data_type=>'SDO_GEOMETRY'
@@ -18237,7 +18248,7 @@ wwv_flow_imp_page.create_map_region_layer(
 '    name,',
 '    geom',
 'from',
-'    points'))
+'    sdo_sample_points'))
 ,p_has_spatial_index=>true
 ,p_pk_column=>'ID'
 ,p_geometry_column_data_type=>'SDO_GEOMETRY'
@@ -18870,6 +18881,128 @@ prompt --application/deployment/definition
 begin
 wwv_flow_imp_shared.create_install(
  p_id=>wwv_flow_imp.id(12236433619719335353)
+,p_deinstall_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'-----------------------------',
+'-- Clean up sample point data',
+'-----------------------------',
+'',
+'-- Unregister SDO_GEOMETRY column',
+'begin',
+'  apex_spatial.delete_geom_metadata (',
+'    p_table_name  => ''SDO_SAMPLE_POINTS'',',
+'    p_column_name => ''GEOM'');',
+'end;',
+'/',
+'',
+'-- Drop table',
+'drop table sdo_sample_points purge;'))
+);
+end;
+/
+prompt --application/deployment/install/install_create_sample_point_data
+begin
+wwv_flow_imp_shared.create_install_script(
+ p_id=>wwv_flow_imp.id(13252188094453815776)
+,p_install_id=>wwv_flow_imp.id(12236433619719335353)
+,p_name=>'create_sample_point_data'
+,p_sequence=>10
+,p_script_type=>'INSTALL'
+,p_script_clob=>wwv_flow_string.join(wwv_flow_t_varchar2(
+'-----------------------------------------',
+'-- Create a random point data.',
+'-- sdo_sample_points are located in the Netherlands.',
+'-----------------------------------------',
+'',
+'-- Create table',
+'create table sdo_sample_points (',
+'    id number,',
+'    geom sdo_geometry,',
+'    name varchar2(200),',
+'    constraint pk_sdo_sample_points primary key (id) enable',
+');',
+'',
+'-- APEX specific registration of',
+'--   SDO_GEOMETRY column GEOM',
+'--   in table SDO_SAMPLE_POINTS',
+'-- using APEX_SPATIAL.INSERT_GEOM_METADATA',
+'',
+'-- Clean up before inserting the metadata',
+'begin',
+'  apex_spatial.delete_geom_metadata (',
+'    p_table_name  => ''SDO_SAMPLE_POINTS'',',
+'    p_column_name => ''GEOM'');',
+'end;',
+'/',
+'',
+'begin',
+'  apex_spatial.insert_geom_metadata (',
+'    p_table_name  => ''SDO_SAMPLE_POINTS'',',
+'    p_column_name => ''GEOM'',',
+'    p_diminfo     => sdo_dim_array(',
+'      sdo_dim_element(''X'',-180,180,1),',
+'      sdo_dim_element(''Y'',-90,90,1)',
+'    ),',
+'    p_srid        => apex_spatial.c_wgs_84 );',
+'end;',
+'/',
+'',
+'-- Create the spatial index optimized for points',
+'create index sdo_sample_points_geom_sidx on sdo_sample_points(geom)',
+'indextype is mdsys.spatial_index_v2',
+'parameters (''LAYER_GTYPE=POINT'');',
+'',
+'-- Procedure to insert random point geometries located in the Netherlands',
+'declare',
+'  type t_points is table of sdo_sample_points%ROWTYPE;',
+'  l_tab t_points := t_points();',
+'',
+'  -- Sample size',
+'  l_size number    := 200;',
+'',
+'  l_curr_id number;',
+'  l_curr_lon number;',
+'  l_curr_lat number;',
+'  l_curr_geom sdo_geometry;',
+'  l_curr_name varchar2(200);',
+'',
+'begin',
+'',
+'  -- Fetch last id from gps_positions table',
+'  select nvl(max(id),1) + 1 into l_curr_id from sdo_sample_points;',
+'',
+'  -- Populate sample as collection',
+'  for i in 1 .. l_size loop',
+'',
+'    l_curr_lon := round(dbms_random.value(51.6,52.3),10);',
+'    l_curr_lat := round(dbms_random.value(4.7,5.7),10);',
+'',
+'    l_curr_geom := mdsys.sdo_geometry (',
+'      2001,',
+'      4326,',
+'      sdo_point_type (l_curr_lat, l_curr_lon, null),',
+'      null,',
+'      null',
+'    );',
+'',
+'    l_curr_name := dbms_random.string(''x'',10);',
+'',
+'    l_tab.extend;',
+'    l_tab(l_tab.last).id   := l_curr_id;',
+'    l_tab(l_tab.last).geom := l_curr_geom;',
+'    l_tab(l_tab.last).name := l_curr_name;',
+'',
+'    l_curr_id := l_curr_id + 1;',
+'',
+'  end loop;',
+'',
+'  -- Ingest table with point geometries',
+'  forall i in l_tab.first .. l_tab.last',
+'    insert /*+ APPEND */ into sdo_sample_points values l_tab(i);',
+'',
+'  commit;',
+'',
+'end;',
+'/'))
 );
 end;
 /

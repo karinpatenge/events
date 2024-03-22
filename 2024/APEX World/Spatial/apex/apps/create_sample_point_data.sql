@@ -1,22 +1,32 @@
 -----------------------------------------
 -- Create a random point data.
--- Points are located in the Netherlands.
+-- sdo_sample_points are located in the Netherlands.
 -----------------------------------------
 
 -- Create table
-create table points (
+create table sdo_sample_points (
     id number,
     geom sdo_geometry,
     name varchar2(200),
-    constraint pk_points primary key (id) enable
+    constraint pk_sdo_sample_points primary key (id) enable
 );
 
--- APEX only:
--- Register SDO_GEOMETRY column of table POINTS
+-- APEX specific registration of
+--   SDO_GEOMETRY column GEOM
+--   in table SDO_SAMPLE_POINTS
 -- using APEX_SPATIAL.INSERT_GEOM_METADATA
+
+-- Clean up before inserting the metadata
+begin
+  apex_spatial.delete_geom_metadata (
+    p_table_name  => 'SDO_SAMPLE_POINTS',
+    p_column_name => 'GEOM');
+end;
+/
+
 begin
   apex_spatial.insert_geom_metadata (
-    p_table_name  => 'POINTS',
+    p_table_name  => 'SDO_SAMPLE_POINTS',
     p_column_name => 'GEOM',
     p_diminfo     => sdo_dim_array(
       sdo_dim_element('X',-180,180,1),
@@ -26,14 +36,14 @@ begin
 end;
 /
 
--- Create spatial index
-create index points_geom_sidx on points(geom)
+-- Create the spatial index optimized for points
+create index sdo_sample_points_geom_sidx on sdo_sample_points(geom)
 indextype is mdsys.spatial_index_v2
 parameters ('LAYER_GTYPE=POINT');
 
 -- Procedure to insert random point geometries located in the Netherlands
 declare
-  type t_points is table of points%ROWTYPE;
+  type t_points is table of sdo_sample_points%ROWTYPE;
   l_tab t_points := t_points();
 
   -- Sample size
@@ -48,7 +58,7 @@ declare
 begin
 
   -- Fetch last id from gps_positions table
-  select nvl(max(id),1) + 1 into l_curr_id from points;
+  select nvl(max(id),1) + 1 into l_curr_id from sdo_sample_points;
 
   -- Populate sample as collection
   for i in 1 .. l_size loop
@@ -77,7 +87,7 @@ begin
 
   -- Ingest table with point geometries
   forall i in l_tab.first .. l_tab.last
-    insert /*+ APPEND */ into points values l_tab(i);
+    insert /*+ APPEND */ into sdo_sample_points values l_tab(i);
 
   commit;
 
