@@ -1,32 +1,16 @@
-/***
- * Operational Property Graphs in Oracle Database 23ai
+/******************************************************************************************
+ * Operational Property Graphs in Oracle Database 23ai: Bank Graph
  * Author: Karin Patenge
  * Date: May 2025
  *
  * Source: https://apexapps.oracle.com/pls/apex/r/dbpm/livelabs/run-workshop?p210_wid=3659
- */
+ ******************************************************************************************/
 
-DROP PROPERTY GRAPH BANK_GRAPH;
-
-CREATE PROPERTY GRAPH IF NOT EXISTS BANK_GRAPH
-    VERTEX TABLES (
-        BANK_ACCOUNTS
-        KEY (ID)
-        LABEL account
-        PROPERTIES (ID, Name, Balance)
-    )
-    EDGE TABLES (
-        BANK_TRANSFERS
-        KEY (TXN_ID)
-        SOURCE KEY (src_acct_id) REFERENCES BANK_ACCOUNTS(ID)
-        DESTINATION KEY (dst_acct_id) REFERENCES BANK_ACCOUNTS(ID)
-        LABEL transfer
-        PROPERTIES (src_acct_id, dst_acct_id, amount)
-);
-
+-- Query graph metadata
 SELECT * FROM user_property_graphs;
 SELECT * FROM user_pg_label_properties WHERE graph_name='BANK_GRAPH';
 
+-- SQL/PGQ queries
 SELECT acct_id, COUNT(1) AS Num_Transfers
 FROM graph_table ( BANK_GRAPH
     MATCH (src) - [IS TRANSFER] -> (dst)
