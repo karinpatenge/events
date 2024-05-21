@@ -2,8 +2,6 @@
  * Operational Property Graphs in Oracle Database 23ai: Bank Graph
  * Author: Karin Patenge
  * Date: May 2025
- *
- * Source: https://apexapps.oracle.com/pls/apex/r/dbpm/livelabs/run-workshop?p210_wid=3659
  ******************************************************************************************/
 
 -- Query graph metadata
