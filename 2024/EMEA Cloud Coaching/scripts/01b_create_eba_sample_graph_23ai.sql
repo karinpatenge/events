@@ -33,7 +33,7 @@ CREATE PROPERTY GRAPH eba_sample_graph
             KEY ( region_id )
             LABEL region
             PROPERTIES ( region_id, region_name ),
-        eba_graphviz_employees_view
+        eba_graphviz_employees_view as eba_graphviz_employees
             KEY ( employee_id )
             LABEL employee
             PROPERTIES ( commission_pct, department_id, email, employee_id, first_name, hire_date, job_id, last_name, manager_id, phone_number, salary, country_id )
