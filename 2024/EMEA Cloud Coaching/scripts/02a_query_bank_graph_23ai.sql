@@ -8,6 +8,10 @@
 SELECT * FROM user_property_graphs;
 SELECT * FROM user_pg_label_properties WHERE graph_name='BANK_GRAPH';
 
+-- Get DDL to create the graph
+SELECT DBMS_METADATA.GET_DEL('PROPERTY_GRAPH','BANK_GRAPH','GRAPHUSER')
+FROM DUAL;
+
 -- SQL/PGQ queries
 SELECT acct_id, COUNT(1) AS Num_Transfers
 FROM graph_table ( BANK_GRAPH
