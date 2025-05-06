@@ -8,12 +8,14 @@ The conference program can be found [here](https://my.doag.org/events/apex-conne
 
 ## Demos
 
-### Simplified creation of spatial data (vector data representing points, lines, polygons, or combinations of those; aka geometries or simple features)
+### Simplify spatial data creation
+
+For vector data representing points, lines, polygons, or combinations of those; aka geometries or simple features.
 
 #### Scripts
 
 * [Create point geometries based on lon/lat values](./scripts/01_create_point_geometries_from_lon_lat.sql) using an open [data set containing information about street lamps in Nuremberg](./data/01_DE-BY-Nurnberg-202503200800.lit.csv), and published via the [GovData Portal Germany](https://www.govdata.de/suche/daten/strassenlampen-nurnberg-de-by).
-* [Typical queries queries for point geometries](./scripts/02_query_point_geometries.sql)
+* [Typical queries for point geometries](./scripts/02_query_point_geometries.sql)
 
 ### Load spatial data using Spatial Studio
 
