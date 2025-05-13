@@ -10,10 +10,11 @@
 --
 
 -- Import the csv data set using APEX, SQL Developer, SQLcl, or another tool of your choice
--- The table name I choose is: govdata_street_lamps_nue
+-- Table name: govdata_street_lamps_nue
 
 -- Add a column to convert lon/lat into SDO_GEOMETRY
-ALTER TABLE govdata_street_lamps_nue ADD (geometry SDO_GEOMETRY);
+ALTER TABLE govdata_street_lamps_nue
+ADD (geometry SDO_GEOMETRY);
 
 -- Fill the SDO_GEOMETRY column
 UPDATE govdata_street_lamps_nue

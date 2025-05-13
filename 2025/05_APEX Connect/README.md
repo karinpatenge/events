@@ -12,7 +12,7 @@ The conference program can be found [here](https://my.doag.org/events/apex-conne
 
 * Oracle Autonomous Database (ADW) 23ai (Always Free)
 * Oracle Spatial Studio deployed from OCI Marketplace to OCI Compute VM (Always Free)
-* SQL Developer
+* SQL Developer / Visual Code with SQL Developer extension
 * APEX as integrated tool in ADB
 
 ### Simplify spatial data creation
@@ -24,7 +24,7 @@ For vector data representing points, lines, polygons, or combinations of those; 
 * [Create point geometries based on lon/lat values](./scripts/01_create_point_geometries_from_lon_lat.sql) using an open [data set containing information about street lamps in Nuremberg](./data/01_DE-BY-Nurnberg-202503200800.lit.csv), and published via the [GovData Portal Germany](https://www.govdata.de/suche/daten/strassenlampen-nurnberg-de-by).
 * [A few queries for point geometries](./scripts/02_query_point_geometries.sql)
 
-### Load spatial data using Spatial Studio
+### Load spatial data
 
 Spatial and Graph supports the use of GeoJSON objects to store, index, and manage geographic data that is in JSON (JavaScript Object Notation) format.
 You can convert Oracle Spatial and Graph `SDO_GEOMETRY` objects to GeoJSON objects, and GeoJSON objects to `SDO_GEOMETRY` objects. You can use spatial operators, functions, and a special `SDO_GEOMETRY` method to work with GeoJSON data.
@@ -40,8 +40,11 @@ In Oracle Database 19c, [JSON support was introduced in addition to GeoJSON](htt
 #### Data Sources
 
 * [World cities in GeoJSON format](https://github.com/drei01/geojson-world-cities/)
-* [World Administrative Boundaries - Countries and Territories in JSON format](https://public.opendatasoft.com/explore/dataset/world-administrative-boundaries/export/)
-* [Geoportal B-W: PEGELONLINE WFS Aktuell](https://metadaten.geoportal-bw.de/geonetwork/srv/ger/catalog.search#/metadata/e2932050-d8f4-4258-8464-33587d42bd33):
+* [World Administrative Boundaries - Countries and Territories as JSON](https://public.opendatasoft.com/explore/dataset/world-administrative-boundaries/export/)
+* [Administrative boundaries Germany Levels 0-1 as GeoJSON](https://gadm.org/download_country.html)
+* [Geoportal B-W: PEGELONLINE WFS Aktuell](https://metadaten.geoportal-bw.de/geonetwork/srv/ger/catalog.search#/metadata/e2932050-d8f4-4258-8464-33587d42bd33)
+* [Unfallatlas Statistikportal DE](https://unfallatlas.statistikportal.de/) > [Unfallatlas und OpenData (Shapefiles)](https://www.opengeodata.nrw.de/produkte/transport_verkehr/unfallatlas/Unfallorte2023_EPSG25832_Shape.zip)
+* [Opendata Straßenlampen in Nürnberg als CSV im European Data Portal](https://osm.download.movisda.io/admin/DE-BY/DE-BY-Nurnberg-202503200800.lit.csv)
 
 #### Scripts
 
@@ -103,4 +106,3 @@ The documentation for 23ai is available [here](https://docs.oracle.com/en/databa
 * [AskTOM Spatial Office Hours on Youtube](https://www.youtube.com/playlist?list=PL3ZqpALcm8HP5glGHJfYLvOzQmjn9QEkn)
 * [AskTOM Spatial Office Hours scripts and data](https://github.com/karinpatenge/asktom-spatial)
 * [AskTOM Spatial Office Hours landing page](https://asktom.oracle.com/ords/r/tech/catalog/series-landing-page?p5_oh_id=7761)
-
