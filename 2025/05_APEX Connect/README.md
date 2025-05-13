@@ -83,14 +83,15 @@ It is strongly recommended that the vector tile caches are disabled before any l
 
 ### In-database routing and drive-time/iso polygons
 
-The following subprograms support Oracle Spatial routing capabilities and are available on Oracle Autonomous Database 19c:
+The following subprograms support Oracle Spatial routing capabilities and are available on Oracle Autonomous Database 23ai:
 
-* [SDO_GCDR.ELOC_ROUTE](https://docs.oracle.com/en/database/oracle/oracle-database/19/spatl/SDO_GCDR-reference.html#GUID-7676EAF1-BAB6-4ACF-BCF3-74BA35019B31)
-* [SDO_GCDR.ELOC_ROUTE_DISTANCE](https://docs.oracle.com/en/database/oracle/oracle-database/19/spatl/SDO_GCDR-reference.html#GUID-AF64EA2B-32EC-4D3B-A7B9-7107600CD1E0)
-* [SDO_GCDR.ELOC_ROUTE_GEOM](https://docs.oracle.com/en/database/oracle/oracle-database/19/spatl/SDO_GCDR-reference.html#GUID-B7042D26-F086-4356-B400-CAB6D0BC9159)
-* [SDO_GCDR.ELOC_ROUTE_TIME](https://docs.oracle.com/en/database/oracle/oracle-database/19/spatl/SDO_GCDR-reference.html#GUID-1DF153E4-FB0E-4065-89A2-C087A51D0C0B)
-* [SDO_GCDR.ELOC_DRIVE_TIME_POLYGON](https://docs.oracle.com/en/database/oracle/oracle-database/19/spatl/SDO_GCDR-reference.html#GUID-2EC98C9B-8F30-46C1-ACDB-43158618A49C)
-* [SDO_GCDR.ELOC_ISO_POLYGON](https://docs.oracle.com/en/database/oracle/oracle-database/19/spatl/SDO_GCDR-reference.html#GUID-CBFA3E7E-366F-44ED-8BE5-A17F6EEB0FC3)
+* SDO_GCDR.ELOC_ROUTE
+* SDO_GCDR.ELOC_ROUTE_DISTANCE
+* SDO_GCDR.ELOC_ROUTE_GEOM
+* SDO_GCDR.ELOC_ROUTE_TIME
+* SDO_GCDR.ELOC_DRIVE_TIME_POLYGON
+* SDO_GCDR.ELOC_DRIVE_DISTANCE_POLYGON
+* SDO_GCDR.ELOC_ISO_POLYGON
 
 The documentation for 23ai is available [here](https://docs.oracle.com/en/database/oracle/oracle-database/23/spatl/sdo_gcdr-package-geocoding.html).
 
