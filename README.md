@@ -7,8 +7,8 @@ Scripts and data used during events
 - March: [APEX World in Amersfoort/NL](./2024/03_APEX%20World/README.md)
 - April: [APEX Connect in Düsseldorf/DE](./2024/04_APEX%20Connect/README.md)
 - April: [OUGN in Oslo/NO](./2024/04_OUGN/README.md)
-- April: [EMEA Cloud Coaching - Online event](./2024/05_EMEA%20Cloud%20Coaching/README.md)
-- April: [ConTech in Bucharest/RO](./2024/05_ConTech/README.md)
+- May: [EMEA Cloud Coaching - Online event](./2024/05_EMEA%20Cloud%20Coaching/README.md)
+- May: [ConTech in Bucharest/RO](./2024/05_ConTech/README.md)
 
 ## Events in 2025
 
