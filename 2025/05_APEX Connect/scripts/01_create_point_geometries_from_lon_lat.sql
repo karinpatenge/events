@@ -5,6 +5,10 @@
  * Date: May 2025
  *********************************************/
 
+--
+-- Documentation: https://docs.oracle.com/en/database/oracle/oracle-database/23/spatl/spatial-developers-guide.pdf
+--
+
 -- Import the csv data set using APEX, SQL Developer, SQLcl, or another tool of your choice
 -- The table name I choose is: govdata_street_lamps_nue
 
@@ -40,7 +44,7 @@ SELECT * FROM USER_SDO_GEOM_METADATA;
 -- Create spatial index (optimized index for point geometries)
 CREATE INDEX govdata_street_lamps_nue_sidx
 ON govdata_street_lamps_nue (geometry)
-INDEXTYPE IS MDSYS.SPATIAL_INDEX_V2 PARAMETERS ('layer_gtype=POINT');
+INDEXTYPE IS MDSYS.SPATIAL_INDEX_V2 PARAMETERS ('layer_gtype=POINT cbtree_index=true');
 
 -- If needed, drop the index
 DROP INDEX govdata_street_lamps_nue_sidx FORCE;
