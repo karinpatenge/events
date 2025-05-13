@@ -7,6 +7,7 @@
 
 --
 -- Documentation: https://docs.oracle.com/en/database/oracle/oracle-database/23/spatl/spatial-developers-guide.pdf
+-- Data set: ./data/01_DE-BY-Nurnberg-202503200800.lit.csv
 --
 
 -- Import the csv data set using APEX, SQL Developer, SQLcl, or another tool of your choice
