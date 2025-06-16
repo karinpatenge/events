@@ -1,0 +1,51 @@
+https://blogs.oracle.com/database/post/graph-rag-bring-the-power-of-graphs-to-generative-ai
+https://www.youtube.com/watch?v=81GShL2Uz04
+https://otube.oracle.com/media/Graph%20RAG%20with%20OracleDB%20-%20Eduard%20Cuba%2C%20Melliyal%20Annamalai/1_1n7z0n1l
+https://otube.oracle.com/media/Graph%20Enthusiasts%20Call%20February%202025/1_92ifiixe
+https://otube.oracle.com/media/Spotlight%20Series%20JAPAC%20ADB%20Graph%20RAG%2020241126/1_vj4s38tt
+https://otube.oracle.com/media/Graph%20RAG/1_dnc6ot4a
+https://www.youtube.com/watch?v=lk4LdHM6hXs Developing GraphRAG Applications Using Oracle APEX and Generative AI (Matt McDaniel)
+
+https://blogs.oracle.com/database/post/using-javascript-and-langchain-for-retrieval-augmented-generation-rag-with-oracle-graph
+https://blogs.oracle.com/database/post/genai-rag-likes-explicit-relationships-use-graphs
+https://medium.com/oracledevs/graphrag-using-langchain-and-oracle-graph-on-oracle-database-23ai-part-1-dc76b48a4ca1
+
+https://confluence.oraclecorp.com/confluence/display/ProjectQ/Graph+RAG+on+Oracle+Stack
+https://confluence.oraclecorp.com/confluence/display/ProjectQ/Graph+RAG+in+DB
+https://confluence.oraclecorp.com/confluence/display/ProjectQ/Graph+RAG+Langchain+Demo
+
+
+
+
+https://medium.com/data-science/how-to-implement-knowledge-graphs-and-large-language-models-llms-together-at-the-enterprise-level-cf2835475c47
+https://medium.com/data-science/how-to-build-a-graph-rag-app-b323fc33ba06
+https://pub.towardsai.net/how-microsofts-graphrag-works-step-by-step-b15cada5c209
+https://pub.towardsai.net/graphrag-microsofts-open-source-solution-for-enhanced-document-understanding-b42d05f5fec5
+https://medium.com/data-science/enterprise-ready-knowledge-graphs-96028d863e8c
+https://medium.com/@zilliz_learn/graphrag-explained-enhancing-rag-with-knowledge-graphs-3312065f99e1
+https://medium.com/neo4j/implementing-from-local-to-global-graphrag-with-neo4j-and-langchain-constructing-the-graph-73924cc5bab4
+https://www.youtube.com/watch?v=knDDGYHnnSI GraphRAG: The Marriage of Knowledge Graphs and RAG: Emil Eifrem
+https://www.linkedin.com/pulse/data-discovery-just-got-easier-graphrag-saravanan-n-ppz5c/
+https://thenewstack.io/graphrag-101-increasing-genai-accuracy-and-completeness/
+https://www.oreilly.com/radar/unbundling-the-graph-in-graphrag/
+https://pub.towardsai.net/graphrag-is-the-logical-step-from-rag-so-why-the-sudden-hype-5bd8594c90aa
+https://github.com/microsoft/graphrag
+
+
+https://oradbclouducm.objectstorage.eu-frankfurt-1.oci.customer-oci.com/n/oradbclouducm/b/test-bucket/o
+oracleidentitycloudservice/karin.patenge@oracle.com
+ocid1.user.oc1..aaaaaaaaj4ajo4frzzkyhvgoz7y2vdvovy32fyeungi7usdjgsmr6oxobsca
+:fy4E>m9r:mA{nwe.MEQ
+
+
+The two ways KGs and LLMs are related
+1. LLMs as tools to build KGs and 
+2. KGs as inputs into LLM or GenAI applications
+
+
+
+
+
+
+https://data.geo.admin.ch/ch.meteoschweiz.ogd-pollen/pzh/ogd-pollen_pzh_h_recent.csv
+
