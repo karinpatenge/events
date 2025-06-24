@@ -10,7 +10,7 @@
  *
  * Development:
  * - SQL
- * - TinyBERT
+ * - TinyBERT (Local inside the database)
  *     * BERT -> Bidirectional Encoder Representations from Transformers.
  *     * TinyBERT is a small version of BERT.
  *     * Official TinyBERT paper: https://arxiv.org/pdf/1909.10351
