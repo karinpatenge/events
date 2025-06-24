@@ -387,13 +387,6 @@ END;
 -- Set up a job to run the LOAD_EXTRACT_TABLE function.
 -- The job is dropped if all chunks are processed.
 BEGIN
-  SYS.DBMS_SCHEDULER.DROP_JOB (
-    job_name   => 'runExtractStagingStoredProcedure'
-  );
-END;
-/
-
-BEGIN
   SYS.DBMS_SCHEDULER.CREATE_JOB (
     job_name   => 'runExtractStagingStoredProcedure',
     job_type   => 'STORED_PROCEDURE',
