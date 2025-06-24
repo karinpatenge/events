@@ -4,12 +4,16 @@
  * Adapted for the TDWI 2025 Conference by Karin Patenge (June 2025)
  *
  * Oracle Cloud services used:
- * 1. Oracle Autonomous Database (version 23ai)
+ * 1. Oracle Autonomous Database (version 23ai) (https://www.oracle.com/autonomous-database/free-trial/)
  * 2. Object Storage
  * 3. GenAI service
  *
  * Development:
- * - using SQL
+ * - SQL
+ * - TinyBERT
+ *     * BERT -> Bidirectional Encoder Representations from Transformers.
+ *     * TinyBERT is a small version of BERT.
+ *     * Official TinyBERT paper: https://arxiv.org/pdf/1909.10351
  */
 
 
@@ -19,7 +23,7 @@
 --
 
 -- ================================================================
--- !! Execute as user ADMIN
+-- !! Execute as user ADMIN (once)
 -- ================================================================
 
 --
