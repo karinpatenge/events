@@ -352,10 +352,7 @@ CREATE TABLE IF NOT EXISTS graph_extraction_stg (
 -- stores the response in a staging table.
 CREATE OR REPLACE PROCEDURE load_extract_table AS
 BEGIN
-  DECLARE
-    x NUMBER := 0;
   BEGIN
-
     -- Loop through chunks that have not been added to the staging table but only 10 times
     FOR text_chunk IN (
       SELECT
@@ -371,7 +368,6 @@ BEGIN
       ORDER BY
         c.chunk_id
     ) LOOP
-      x := x + 1;
       --Execute function to send prompt to Gen AI and insert response into staging table
       INSERT INTO graph_extraction_stg (
         chunk_id,
@@ -382,52 +378,29 @@ BEGIN
         extract_graph ( text_chunk.chunk_data ) AS response
       FROM
         dual;
-
-      EXIT WHEN x > 10;
+      COMMIT;
     END LOOP;
-    COMMIT;
   END;
 END;
 /
 
--- Schedule a job to run function LOAD_EXTRACT_TABLE repeatedly for 10 chunks
--- until all text chunks are processed.
+-- Set up a job to run the LOAD_EXTRACT_TABLE function.
+-- The job is dropped if all chunks are processed.
 BEGIN
-  SYS.DBMS_SCHEDULER.CREATE_JOB (
-    job_name   => 'runExtractStagingStoredProcedure',
-    job_type   => 'STORED_PROCEDURE',
-    job_action => 'LOAD_EXTRACT_TABLE'
+  SYS.DBMS_SCHEDULER.DROP_JOB (
+    job_name   => 'runExtractStagingStoredProcedure'
   );
 END;
 /
 
--- Run the job
-DECLARE
-  startjob TIMESTAMP;
-  endjob   TIMESTAMP;
 BEGIN
-  startjob := current_timestamp;
-  endjob := startjob + 1 / 24;
-  SYS.DBMS_SCHEDULER.SET_ATTRIBUTE (
-    name      => 'runExtractStagingStoredProcedure',
-    attribute => 'START_DATE',
-    value     => startjob
-  );
-
-  SYS.DBMS_SCHEDULER.SET_ATTRIBUTE (
-    name      => 'runExtractStagingStoredProcedure',
-    attribute => 'REPEAT_INTERVAL',
-    value     => 'FREQ=MINUTELY; INTERVAL=2'
-  );
-
-  SYS.DBMS_SCHEDULER.SET_ATTRIBUTE (
-    name      => 'runExtractStagingStoredProcedure',
-    attribute => 'END_DATE',
-    value     => endjob
-  );
-
-  SYS.DBMS_SCHEDULER.ENABLE (
-    name => 'runExtractStagingStoredProcedure'
+  SYS.DBMS_SCHEDULER.CREATE_JOB (
+    job_name   => 'runExtractStagingStoredProcedure',
+    job_type   => 'STORED_PROCEDURE',
+    job_action => 'LOAD_EXTRACT_TABLE',
+    enabled => TRUE,
+    start_date => SYSTIMESTAMP,
+    auto_drop => TRUE
   );
 END;
 /
