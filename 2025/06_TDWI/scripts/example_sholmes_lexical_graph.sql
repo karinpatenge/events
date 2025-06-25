@@ -119,7 +119,6 @@ SELECT
 FROM
   all_credentials;
 
-
 -- Create your credentials
 BEGIN
 
@@ -173,12 +172,11 @@ FROM
 -- Process the book text
 --
 
--- Clean up the tables
+-- Set up tables to store the book text (blob, clob) and text chunks
 DROP TABLE IF EXISTS sholmes_tab;
 DROP TABLE IF EXISTS sholmes_tab_clob;
 DROP TABLE IF EXISTS sholmes_tab_chunks;
 
--- Set up tables to store the book text (blob, clob) and text chunks
 CREATE TABLE sholmes_tab (
   id NUMBER,
   data BLOB
@@ -353,7 +351,7 @@ CREATE TABLE IF NOT EXISTS graph_extraction_stg (
 CREATE OR REPLACE PROCEDURE load_extract_table AS
 BEGIN
   BEGIN
-    -- Loop through chunks that have not been added to the staging table but only 10 times
+    -- Loop through chunks that have not been added to the staging table
     FOR text_chunk IN (
       SELECT
         c.chunk_id,
@@ -418,7 +416,7 @@ SELECT * FROM graph_extraction_stg;
 -- Set up a staging table to store the relations retrieved (detected) by the LLM
 DROP TABLE IF EXISTS graph_relations_stg;
 
-CREATE TABLE graph_relations_stg (
+CREATE TABLE IF NOT EXISTS graph_relations_stg (
   id RAW(16) DEFAULT SYS_GUID() PRIMARY KEY,
   chunk_id NUMBER,
   head VARCHAR(256) NOT NULL,
@@ -459,7 +457,16 @@ WHERE
   jt.tail IS NOT NULL;
 COMMIT;
 
-SELECT * FROM graph_relations_stg ORDER BY head, head_type, relation, tail, tail_type;
+SELECT
+  *
+FROM
+  graph_relations_stg
+ORDER BY
+  head,
+  head_type,
+  relation,
+  tail,
+  tail_type;
 
 --
 -- Clean up entities and relationships
@@ -568,7 +575,7 @@ COMMIT;
 -- Table to store the vertices from graph_relations_stg
 DROP TABLE IF EXISTS graph_entities;
 
-CREATE TABLE graph_entities (
+CREATE TABLE IF NOT EXISTS graph_entities (
   id NUMBER GENERATED ALWAYS AS IDENTITY ( START WITH 1 CACHE 20 )  NOT NULL,
   entity_name VARCHAR2 (250),
   entity_type VARCHAR2 (250)
@@ -599,7 +606,7 @@ SELECT * FROM graph_entities ORDER BY 1,2;
 -- Table to store the edges from graph_relations_stg
 DROP TABLE IF EXISTS graph_relations;
 
-CREATE TABLE graph_relations (
+CREATE TABLE IF NOT EXISTS graph_relations (
   id NUMBER GENERATED ALWAYS AS IDENTITY ( START WITH 1 CACHE 20 ) NOT NULL ,
   chunk_id NUMBER ,
   head_id  NUMBER ,
