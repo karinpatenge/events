@@ -1,5 +1,5 @@
 /*
- * Hands-on workshop "Create a lexical graph by chunking a text, extracting nodes, and edges to build a graph" by Eduard Cuba
+ * Hands-on workshop "Gain a competitive edge with Generative AI, use AI to generate the Edge and Vertices that make Property Graph data structures" by Eduard Cuba
  * published on Oracle LiveLabs (https://livelabs.oracle.com/pls/apex/f?p=133:180:::::wid:4174)
  * Adapted for the TDWI 2025 Conference by Karin Patenge (June 2025)
  *
