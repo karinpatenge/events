@@ -1,0 +1,44 @@
+--  DEFINE TEMPLATE
+BEGIN
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'cities',
+        p_pattern => 'add_city',
+        p_priority => 0,
+        p_etag_type => 'HASH',
+        p_comments => ''
+    );
+    COMMIT;
+END;
+/
+
+
+-- DEFINE HANDLER
+BEGIN
+    ORDS.DEFINE_HANDLER(
+        p_module_name => 'cities',
+        p_pattern => 'add_city',
+        p_method => 'POST',
+        p_source_type => ords.source_type_plsql,
+        p_source => 'BEGIN
+  add_city(
+      p_city       => :city,
+      p_lat        => :lat,
+      p_lon        => :lon,
+      p_population => :population
+  );
+
+  :RESPONSE := ''''{"status":"success","message":"City added."}'''';
+
+EXCEPTION
+
+  WHEN OTHERS THEN
+       :RESPONSE := ''''{"status":"error","message":"''''
+                    || REPLACE(SQLERRM, ''''"'''', ''''\"'''')
+                    || ''''"}'''';
+END;',
+        p_items_per_page => 25,
+        p_comments => ''
+    );
+    COMMIT;
+END;
+/

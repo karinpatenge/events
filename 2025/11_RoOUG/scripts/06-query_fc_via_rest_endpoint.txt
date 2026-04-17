@@ -1,0 +1,426 @@
+Request:
+
+curl -s https://ij1tyzir3wpwlpe-kpadw23ai.adb.eu-frankfurt-1.oraclecloudapps.com/ords/roouguser/meteo_stations_rou_fc/ | jq '.items[].json_document'
+
+
+Response:
+
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15200,
+        "NUME": "ARAD",
+        "CMR": "BANAT-CRISANA",
+        "JUDET": "AR",
+        "LAT": "46.1336111",
+        "LONG_SGCV": "21.3536111"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          218462.783251454,
+          521325.353005476
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15150,
+        "NUME": "BACAU",
+        "CMR": "MOLDOVA",
+        "JUDET": "BC",
+        "LAT": "46.5577778",
+        "LONG_SGCV": "26.8966667"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          646803.3286,
+          560910.2854
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15020,
+        "NUME": "BOTOSANI",
+        "CMR": "MOLDOVA",
+        "JUDET": "BT",
+        "LAT": "47.7355556",
+        "LONG_SGCV": "26.6455556"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          623538.7679,
+          694240.5347
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15420,
+        "NUME": "BUC-BANEASA",
+        "CMR": "MUNTENIA",
+        "JUDET": "B",
+        "LAT": "44.5105556",
+        "LONG_SGCV": "26.0780556"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          585844.3678,
+          335090.4521
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15350,
+        "NUME": "BUZAU",
+        "CMR": "MUNTENIA",
+        "JUDET": "BZ",
+        "LAT": "45.1327778",
+        "LONG_SGCV": "26.8516667"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          645751.1495,
+          405335.5432
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15460,
+        "NUME": "CALARASI",
+        "CMR": "DOBROGEA",
+        "JUDET": "CL",
+        "LAT": "44.2058333",
+        "LONG_SGCV": "27.3383333"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          687003.21,
+          303363.5052
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15292,
+        "NUME": "CARANSEBES",
+        "CMR": "BANAT-CRISANA",
+        "JUDET": "CS",
+        "LAT": "45.4166667",
+        "LONG_SGCV": "22.2291667"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          283085.1225,
+          439021.9446
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15108,
+        "NUME": "CEAHLAU TOACA",
+        "CMR": "MOLDOVA",
+        "JUDET": "NT",
+        "LAT": "46.9775",
+        "LONG_SGCV": "25.95"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          572385.6622,
+          609101.8416
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15120,
+        "NUME": "CLUJ-NAPOCA",
+        "CMR": "TRANSILVANIA NORD",
+        "JUDET": "CJ",
+        "LAT": "46.7777778",
+        "LONG_SGCV": "23.5713889"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          391035.4556,
+          587452.0653
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15480,
+        "NUME": "CONSTANTA",
+        "CMR": "DOBROGEA",
+        "JUDET": "CT",
+        "LAT": "44.2138889",
+        "LONG_SGCV": "28.6455556"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          791412.7073,
+          308126.6342
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15450,
+        "NUME": "CRAIOVA",
+        "CMR": "OLTENIA",
+        "JUDET": "DJ",
+        "LAT": "44.3102778",
+        "LONG_SGCV": "23.8669444"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          409724.2994,
+          312896.3644
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15230,
+        "NUME": "DEVA",
+        "CMR": "BANAT-CRISANA",
+        "JUDET": "HD",
+        "LAT": "45865",
+        "LONG_SGCV": "22.8988889"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          337009.8175,
+          487170.7248
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15410,
+        "NUME": "DROBETA TR.SEVERIN",
+        "CMR": "OLTENIA",
+        "JUDET": "MH",
+        "LAT": "44.6263889",
+        "LONG_SGCV": "22.6261111"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          311765.2259,
+          350184.7659
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15310,
+        "NUME": "GALATI",
+        "CMR": "MOLDOVA",
+        "JUDET": "GL",
+        "LAT": "45.4730556",
+        "LONG_SGCV": "28.0322222"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          737148.4725,
+          445954.7147
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15090,
+        "NUME": "IASI",
+        "CMR": "MOLDOVA",
+        "JUDET": "IS",
+        "LAT": "47.1633333",
+        "LONG_SGCV": "27.6272222"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          699331.3688,
+          633490.5894
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15170,
+        "NUME": "MIERCUREA CIUC",
+        "CMR": "TRANSILVANIA SUD",
+        "JUDET": "HR",
+        "LAT": "46.3713889",
+        "LONG_SGCV": "25.7725"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          559553.4415,
+          541583.7474
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15015,
+        "NUME": "OC.SUGATAG",
+        "CMR": "TRANSILVANIA NORD",
+        "JUDET": "MM",
+        "LAT": "47.7769444",
+        "LONG_SGCV": "23.9405556"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          420714.3121,
+          698087.396
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15346,
+        "NUME": "RM. VILCEA",
+        "CMR": "OLTENIA",
+        "JUDET": "VL",
+        "LAT": "45.0888889",
+        "LONG_SGCV": "24.3627778"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          449967.3141,
+          398982.9594
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15470,
+        "NUME": "ROSIORII DE VEDE",
+        "CMR": "MUNTENIA",
+        "JUDET": "TR",
+        "LAT": "44.1072222",
+        "LONG_SGCV": "24.9786111"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          498417.7348,
+          289714.2642
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15260,
+        "NUME": "SIBIU",
+        "CMR": "TRANSILVANIA SUD",
+        "JUDET": "SB",
+        "LAT": "45.7894444",
+        "LONG_SGCV": "24.0913889"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          429490.1824,
+          477020.9122
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15360,
+        "NUME": "SULINA",
+        "CMR": "DOBROGEA",
+        "JUDET": "TL",
+        "LAT": "45.1622222",
+        "LONG_SGCV": "29.7269444"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          874193.530039865,
+          416511.938953964
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15335,
+        "NUME": "TULCEA",
+        "CMR": "DOBROGEA",
+        "JUDET": "TL",
+        "LAT": "45.1905556",
+        "LONG_SGCV": "28.8241667"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          800522.8353,
+          417246.689
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "CODST": 15280,
+        "NUME": "VF. OMU",
+        "CMR": "MUNTENIA",
+        "JUDET": "PH",
+        "LAT": "45.4458333",
+        "LONG_SGCV": "25.4566667"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          535840.2687,
+          438550.1366
+        ]
+      }
+    }
+  ]
+}

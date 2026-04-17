@@ -1,0 +1,13 @@
+{
+  "type": "Feature",
+  "geometry": {
+    "type": "Point",
+    "coordinates": [
+      26.05083313,
+      44.436331588
+    ]
+  },
+  "properties": {
+    "name": "Politehnica University of Bucharest"
+  }
+}

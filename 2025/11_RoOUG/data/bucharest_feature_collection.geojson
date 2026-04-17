@@ -1,0 +1,29 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "id": "F001",
+      "type": "Feature",
+      "properties": {
+        "name": "Politehnica University of Bucharest"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [26.05083313, 44.436331588]
+      }
+    },{
+      "id": "F002",
+      "type": "Feature",
+      "properties": {
+        "name": "Splaiul Independenței"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [26.09610, 44.42920],
+          [26.04580, 44.44460]
+        ]
+      }
+    }
+  ]
+}
