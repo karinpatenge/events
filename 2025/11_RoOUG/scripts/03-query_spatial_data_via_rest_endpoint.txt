@@ -1,5 +1,5 @@
 Request:
-https://ij1tyzir3wpwlpe-kpadw23ai.adb.eu-frankfurt-1.oraclecloudapps.com/ords/roouguser/gadm41_level0_rou/?q={"gid_0":"ROU"}
+https://<....>.adb.eu-frankfurt-1.oraclecloudapps.com/ords/roouguser/gadm41_level0_rou/?q={"gid_0":"ROU"}
 
 
 Response:

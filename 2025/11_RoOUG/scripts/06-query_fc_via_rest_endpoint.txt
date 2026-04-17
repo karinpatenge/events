@@ -1,6 +1,6 @@
 Request:
 
-curl -s https://ij1tyzir3wpwlpe-kpadw23ai.adb.eu-frankfurt-1.oraclecloudapps.com/ords/roouguser/meteo_stations_rou_fc/ | jq '.items[].json_document'
+curl -s https://<....>.adb.eu-frankfurt-1.oraclecloudapps.com/ords/roouguser/meteo_stations_rou_fc/ | jq '.items[].json_document'
 
 
 Response:
