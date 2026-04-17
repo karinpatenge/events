@@ -1,0 +1,218 @@
+cells:
+  - kind: 1
+    value: "# Intro\r
+
+      \r
+
+      This notebook is intended to demo the **(Labeled) Property Graph**
+      capabilities of the Oracle AI Database 26ai.  \r
+
+      The described capabilities are based on **SQL/PGQ**, the extension to the
+      **SQL 2023 Standard** for defining and querying Property Graphs.\r
+
+      \r
+
+      The demo environment is an Oracle AI Autonomous Database 26ai set up for
+      Lakehouse workloads. Similarly, an Autonomous AI Database for Transaction
+      Processing workloads can be used.\r
+
+      \r
+
+      Documentation: [Graph Developer´s Guide for Property Graph
+      26.1](https://docs.oracle.com/en/database/oracle/property-graph/26.1/spgd\
+      g/sql-property-graphs.html)"
+    languageId: markdown
+  - kind: 1
+    value: "# A first simple Property Graph\r
+
+      \r
+
+      It is based on existing data in an application schema of your Oracle AI
+      Database."
+    languageId: markdown
+  - kind: 1
+    value: "## Clean up first"
+    languageId: markdown
+  - kind: 2
+    value: "-- Clean up existing graphs\r
+
+      DROP PROPERTY GRAPH IF EXISTS aaa_simple_graph;\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: "-- Clean up existing tables\r
+
+      DROP TABLE IF EXISTS aaa_customers CASCADE CONSTRAINTS PURGE;\r
+
+      DROP TABLE IF EXISTS aaa_products CASCADE CONSTRAINTS PURGE;\r
+
+      DROP TABLE IF EXISTS aaa_buys CASCADE CONSTRAINTS PURGE;\r\n"
+    languageId: oracle-sql
+  - kind: 1
+    value: "## Create and populate tables"
+    languageId: markdown
+  - kind: 2
+    value: "CREATE TABLE IF NOT EXISTS aaa_customers (\r
+
+      \  id   NUMBER,\r
+
+      \  name VARCHAR2(10)\r
+
+      );\r
+
+      \r
+
+      INSERT INTO aaa_customers VALUES(1, 'Andrea');\r
+
+      INSERT INTO aaa_customers VALUES(2, 'Filip');\r
+
+      COMMIT;\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: "CREATE TABLE IF NOT EXISTS aaa_products (\r
+
+      \  id   NUMBER,\r
+
+      \  name VARCHAR2(10)\r
+
+      );\r
+
+      \r
+
+      INSERT INTO aaa_products VALUES(1, 'Dress');\r
+
+      COMMIT;\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: "-- Verify the results by querying the tables\r
+
+      SELECT * FROM aaa_customers;\r
+
+      SELECT * FROM aaa_products;\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: "CREATE TABLE IF NOT EXISTS aaa_buys (\r
+
+      \  id          NUMBER,\r
+
+      \  customer_id NUMBER,\r
+
+      \  product_id  NUMBER\r
+
+      );\r
+
+      \r
+
+      INSERT INTO aaa_buys VALUES(1,1,1);\r
+
+      COMMIT;\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: "-- Verify the results by querying the table\r
+
+      SELECT * FROM aaa_buys;\r\n"
+    languageId: oracle-sql
+  - kind: 1
+    value: "## Create a simple Property Graph\r
+
+      \r
+
+      Creating a Property Graph means defining a graph view on existing data by
+      specifying which tables and columns are used for vertices (aka nodes) in
+      the graph and which tables and columns are used for edges in the
+      graph.  \r
+
+      \r
+
+      Columns with relational data or JSON documents (also elements from JSON
+      documents) can be defined as properties of vertices and edges.\r
+
+      \r
+
+      Documentation:\r
+
+      \r
+
+      - [SQL Language Reference
+      26](https://docs.oracle.com/en/database/oracle/oracle-database/26/sqlrf/c\
+      reate-property-graph.html#GUID-37364ADB-E89C-4D92-A431-F2544FEDB218)\r
+
+      - [Graph Developer´s Guide for Property
+      Graph](https://docs.oracle.com/en/database/oracle/property-graph/26.1/spg\
+      dg/creating-sql-property-graph.html)"
+    languageId: markdown
+  - kind: 2
+    value: "CREATE PROPERTY GRAPH IF NOT EXISTS aaa_simple_graph\r
+
+      \  VERTEX TABLES (\r
+
+      \    aaa_products AS products\r
+
+      \      KEY (id)\r
+
+      \      LABEL product\r
+
+      \      PROPERTIES ARE ALL COLUMNS,\r
+
+      \    aaa_customers AS customers\r
+
+      \      KEY (id)\r
+
+      \      LABEL customer\r
+
+      \      PROPERTIES ARE ALL COLUMNS\r
+
+      \  )\r
+
+      \  EDGE TABLES (\r
+
+      \    aaa_buys AS buys\r
+
+      \      KEY (id)\r
+
+      \      SOURCE KEY (customer_id) REFERENCES customers (id)\r
+
+      \      DESTINATION KEY (product_id) REFERENCES products (id)\r
+
+      \      LABEL buys\r
+
+      \      NO PROPERTIES\r
+
+      )\r\n"
+    languageId: oracle-sql
+  - kind: 1
+    value: "## Query the simple Property Graph"
+    languageId: markdown
+  - kind: 2
+    value: "-- Query the graph using the GRAPH_TABLE function and its MATCH
+      clause:\r
+
+      -- Find all customers and the products they bought, along with some
+      corresponding node and edge properties.\r
+
+      SELECT *\r
+
+      FROM GRAPH_TABLE (\r
+
+      \  aaa_simple_graph\r
+
+      \  MATCH (c IS customer)-[e IS buys]->(p IS product)\r
+
+      \  COLUMNS (\r
+
+      \    c.name AS customer_name,\r
+
+      \    p.name AS product_name\r
+
+      \  )\r
+
+      )\r
+
+      ORDER BY\r
+
+      \  customer_name,\r
+
+      \  product_name;\r\n"
+    languageId: oracle-sql
+  - kind: 1
+    value: "## The End"
+    languageId: markdown
