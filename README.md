@@ -1,6 +1,6 @@
 # Events
 
-Scripts and data used during events
+The folders contain assets created for the events.
 
 ## Events in 2024
 
@@ -13,3 +13,10 @@ Scripts and data used during events
 ## Events in 2025
 
 - May: [APEX Connect in Rust/DE](./2025/05_APEX%20Connect/README.md)
+- June: [Austrian Oracle User Group Conference in Vienna/AT](./2025/06_AOUG)
+- June: [TDWI Conference in Munich/DE](./2025/06_TDWI)
+- November: [Romanian Oracle User Group Meeting in Bucharest/RO](./2025/11_RoOUG)
+
+## Events in 2026
+
+- April: [APEX ALPE Adria in Ljubljana/SI(./2026/04_APEX_ALPE_Adria)
