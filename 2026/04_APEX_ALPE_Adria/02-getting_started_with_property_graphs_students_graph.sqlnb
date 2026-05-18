@@ -5,7 +5,7 @@ cells:
       \r
 
       Documentation: [Graph Developer´s Guide for Property Graph
-      26.1](https://docs.oracle.com/en/database/oracle/property-graph/26.1/spgd\
+      26.2](https://docs.oracle.com/en/database/oracle/property-graph/26.2/spgd\
       g/creating-sql-property-graph.html)"
     languageId: markdown
   - kind: 1
@@ -42,12 +42,13 @@ cells:
 
       \r
 
-      INSERT INTO aaa_universities (name) VALUES ('University of Ljubljana');\r
+      INSERT INTO aaa_universities (name) VALUES ('Technical University of
+      Berlin');\r
 
-      INSERT INTO aaa_universities (name) VALUES ('University of Maribor');\r
+      INSERT INTO aaa_universities (name) VALUES ('University of Hannover');\r
 
-      INSERT INTO aaa_universities (name) VALUES ('Politehnica University of
-      Bucharest');\r
+      INSERT INTO aaa_universities (name) VALUES ('Technical University of
+      Munich');\r
 
       \r
 
@@ -72,32 +73,32 @@ cells:
 
       INSERT INTO aaa_persons (name, height, birthdate, hr_data)\r
 
-      \  VALUES ('Ivo', 1.80, to_date('13/06/1963', 'DD/MM/YYYY'),
+      \  VALUES ('Oskar', 1.80, to_date('13/06/1963', 'DD/MM/YYYY'),
       '{\"department\":\"IT\",\"role\":\"Software Developer\"}');\r
 
       INSERT INTO aaa_persons (name, height, birthdate, hr_data)\r
 
-      \  VALUES ('Marija', 1.65, to_date('25/09/1982', 'DD/MM/YYYY'),
+      \  VALUES ('Lea', 1.71, to_date('25/09/1982', 'DD/MM/YYYY'),
       '{\"department\":\"HR\",\"role\":\"HR Manager\"}');\r
 
       INSERT INTO aaa_persons (name, height, birthdate, hr_data)\r
 
-      \  VALUES ('Bero', 1.75, to_date('11/03/1966', 'DD/MM/YYYY'),
+      \  VALUES ('Magnus', 1.75, to_date('11/03/1966', 'DD/MM/YYYY'),
       '{\"department\":\"IT\",\"role\":\"Technical Consultant\"}');\r
 
       INSERT INTO aaa_persons (name, height, birthdate, hr_data)\r
 
-      \  VALUES ('Ana', 1.70, to_date('01/02/1987', 'DD/MM/YYYY'),
+      \  VALUES ('Hendrik', 1.78, to_date('01/02/1987', 'DD/MM/YYYY'),
       '{\"department\":\"HR\",\"role\":\"HR Assistant\"}');\r
 
       INSERT INTO aaa_persons (name, height, birthdate, hr_data)\r
 
-      \  VALUES ('Matej', 1.75, to_date('01/05/1999', 'DD/MM/YYYY'),
+      \  VALUES ('Emma', 1.75, to_date('01/05/1999', 'DD/MM/YYYY'),
       '{\"department\":\"IT\",\"role\":\"Product Manager\"}');\r
 
       INSERT INTO aaa_persons (name, height, birthdate, hr_data)\r
 
-      \  VALUES ('Catalina', 1.70, to_date('18/05/1985', 'DD/MM/YYYY'),
+      \  VALUES ('Nora', 1.70, to_date('18/05/1985', 'DD/MM/YYYY'),
       '{\"department\":\"IT\",\"role\":\"Product Manager\"}');\r
 
       \r
@@ -234,7 +235,7 @@ cells:
 
       \r
 
-      Additional documentation:\r
+      Documentation:\r
 
       \r
 
@@ -349,12 +350,15 @@ cells:
 
       \  GRAPH_TABLE (\r
 
-      \    aaa_students_graph\r
+      \    ac_students_graph\r
 
-      \    MATCH (p1 IS person) -[f IS is_friend_of]-> (p2 IS person)-[e IS
-      studied|studied_at]-> (v)\r
+      \    MATCH\r
 
-      \    WHERE v.name = 'Mathematics' or v.name = 'University of Maribor'\r
+      \      (p1 IS person) -[f IS is_friend_of]-> (p2 IS person),\r
+
+      \      (p2 IS person) -[e IS studied|studied_at]-> (v)\r
+
+      \    WHERE v.name = 'Mathematics' OR v.name = 'University of Hannover'\r
 
       \    COLUMNS (\r
 
