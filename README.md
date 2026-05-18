@@ -20,3 +20,5 @@ The folders contain assets created for the events.
 ## Events in 2026
 
 - April: [APEX ALPE Adria in Ljubljana/SI](./2026/04_APEX_ALPE_Adria)
+- May: [APEX Connect in Heidepark Soltau/DE](./2026/05_APEX_Connect)
+
