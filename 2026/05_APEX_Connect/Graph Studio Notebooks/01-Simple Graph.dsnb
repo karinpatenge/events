@@ -315,7 +315,7 @@
           "%sql",
           "",
           "BEGIN",
-          "    INSERT INTO aaa_buys VALUES(1,1,1);",
+          "    INSERT INTO buys VALUES(1,1,1);",
           "END;"
         ],
         "selectedVisualization" : "raw",
