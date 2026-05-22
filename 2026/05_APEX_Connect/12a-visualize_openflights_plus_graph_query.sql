@@ -1,6 +1,6 @@
 SELECT *
 FROM GRAPH_TABLE (
-  ac_openflights_plus_graph
+  openflights_plus_graph
   MATCH (a IS airport WHERE a.iata='LHR') -[r IS route]-> {1,3}(d IS airport WHERE d.iata='TXL')
   ONE ROW PER STEP (v1, e, v2)
   COLUMNS (

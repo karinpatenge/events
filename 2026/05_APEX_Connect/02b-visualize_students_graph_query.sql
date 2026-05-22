@@ -1,7 +1,7 @@
 SELECT *
 FROM
   GRAPH_TABLE (
-    ac_students_graph
+    students_graph
     MATCH (p1 IS person) -[f IS is_friend_of]-> (p2 IS person)-[e IS studied|studied_at]-> (v)
     WHERE v.name = 'Mathematics' or v.name = 'University of Hannover'
     COLUMNS (
@@ -23,7 +23,7 @@ ORDER BY
 SELECT *
 FROM
   GRAPH_TABLE (
-    ac_students_graph
+    students_graph
     MATCH
       (p1 IS person) -[f IS is_friend_of]-> (p2 IS person),
       (p2 IS person) -[e IS studied|studied_at]-> (v)

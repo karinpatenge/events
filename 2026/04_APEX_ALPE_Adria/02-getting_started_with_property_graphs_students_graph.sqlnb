@@ -350,7 +350,7 @@ cells:
 
       \  GRAPH_TABLE (\r
 
-      \    ac_students_graph\r
+      \    students_graph\r
 
       \    MATCH\r
 

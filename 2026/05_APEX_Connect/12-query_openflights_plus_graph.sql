@@ -1,7 +1,7 @@
 -- Show the entire graph
 SELECT *
 FROM GRAPH_TABLE (
-  ac_openflights_plus_graph
+  openflights_plus_graph
   MATCH (v1) -[e1]-> (v2) -[e2 IS located_in]-> (v3)
   COLUMNS (
     vertex_id(v1) AS src,
@@ -14,7 +14,7 @@ FROM GRAPH_TABLE (
 -- Show all train connections between airports located in London and Paris
 SELECT *
 FROM GRAPH_TABLE (
-  ac_openflights_plus_graph
+  openflights_plus_graph
   MATCH (v1 IS city WHERE v1.city='London') <-[e1]- (v2 IS airport) -[e2 IS train_connection]-> (v3 IS airport) -[e3 IS located_in]-> (v4 IS city WHERE v4.city='Paris')
   COLUMNS (
     vertex_id(v1) AS node_v1,
@@ -30,7 +30,7 @@ FROM GRAPH_TABLE (
 -- How can I travel from London Heathrow Airport (LHR) to Paris?
 SELECT *
 FROM GRAPH_TABLE (
-  ac_openflights_plus_graph
+  openflights_plus_graph
   MATCH (a1 IS airport WHERE a1.iata='LHR') -[e1]-> (a2 IS airport) -[e2]-> (c IS city WHERE c.city='Paris')
   COLUMNS (
     vertex_id(a1) AS node_a,
@@ -47,7 +47,7 @@ FROM GRAPH_TABLE (
 -- Which airports are located in Ljubljana, Slovenia?
 SELECT *
 FROM GRAPH_TABLE (
-  ac_openflights_plus_graph
+  openflights_plus_graph
   MATCH (a IS airport) -[e]-> (c IS city)
   WHERE c.city='Ljubljana' AND c.country='Slovenia'
   COLUMNS (
@@ -62,7 +62,7 @@ FROM GRAPH_TABLE (
 -- Show me all flights from Ljubljana (LJU) to Berlin (TXL) with 1 up to 3 flight segments
 SELECT *
 FROM GRAPH_TABLE (
-  ac_openflights_plus_graph
+  openflights_plus_graph
   MATCH (a IS airport WHERE a.iata='LJU') -[r IS route]-> {1,3}(d IS airport WHERE d.iata='TXL')
   ONE ROW PER STEP (v1, e, v2)
   COLUMNS (
@@ -77,7 +77,7 @@ ORDER BY airline;
 -- Which airports are connected to Ljubljana (LJU) by 2 flight segments (i.e. 1 stopover)?
 SELECT COUNT(DISTINCT(iata))
 FROM GRAPH_TABLE (
-  ac_openflights_plus_graph
+  openflights_plus_graph
   MATCH (a IS airport) -[r is route]->{2} (d IS airport)
   WHERE  a.iata='LJU' AND a.iata <> d.iata
   COLUMNS (d.iata)
@@ -86,7 +86,7 @@ FROM GRAPH_TABLE (
 -- Show me the connections from Ljubljana (LJU) to other airports with 1 or 2 stopovers having flight segment distances between 1000 and 2000.
 SELECT DISTINCT *
 FROM GRAPH_TABLE (
-  ac_openflights_plus_graph
+  openflights_plus_graph
   MATCH (a IS airport) -[r IS route]->{1,2} (d IS airport)
   WHERE a.iata='LJU'
   ONE ROW PER STEP (v1, k, v2)

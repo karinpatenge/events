@@ -1,8 +1,8 @@
 -- Clean up the graph if it already exists
-DROP PROPERTY GRAPH IF EXISTS ac_openflights_graph;
+DROP PROPERTY GRAPH IF EXISTS openflights_graph;
 
 -- Create the property graph based on the OpenFlights dataset
-CREATE PROPERTY GRAPH IF NOT EXISTS ac_openflights_graph
+CREATE PROPERTY GRAPH IF NOT EXISTS openflights_graph
   VERTEX TABLES (
     openflights_airports AS airports
       KEY ( id )
