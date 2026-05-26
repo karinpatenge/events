@@ -2,11 +2,12 @@
 
 ## Documentation
 
-- [SQL Graph Queries](https://docs.oracle.com/en/database/oracle/property-graph/26.1/spgdg/sql-graph-queries.html)
-- [Visualizing SQL Graph Queries Using the APEX Graph Visualization Plug-in](https://docs.oracle.com/en/database/oracle/property-graph/26.1/spgdg/visualizing-sql-graph-queries-using-apex-graph-visualization-plug.html)
-- [Property Graph Visualization Developer's Guide and Reference](https://docs.oracle.com/en/database/oracle/property-graph/26.1/pgvtr/interactive-graph-visualization-features.html)
+- [SQL Graph Queries](https://docs.oracle.com/en/database/oracle/property-graph/26.2/spgdg/sql-graph-queries.html)
+- [Visualizing SQL Graph Queries Using the APEX Graph Visualization Plug-in](https://docs.oracle.com/en/database/oracle/property-graph/26.2/spgdg/visualizing-sql-graph-queries-using-apex-graph-visualization-plug.html)
+- [Property Graph Visualization Developer's Guide and Reference](https://docs.oracle.com/en/database/oracle/property-graph/26.2/pgvtr/interactive-graph-visualization-features.html)
 - [Oracle SQL Developer for VS Code](https://docs.oracle.com/en/database/oracle/sql-developer-vscode/25.4/sqdnx/getting-started.html)
-- [Oracle SQL Developer Graph Visualization for VSCode](https://docs.oracle.com/en/database/oracle/property-graph/26.1/spgdg/getting-started-vs-code-graph-visualization-extension.html)
+- [Oracle SQL Developer Graph Visualization for VSCode](https://docs.oracle.com/en/database/oracle/property-graph/26.2/spgdg/getting-started-vs-code-graph-visualization-extension.html)
+- New in 26.2: [Running Graph Algorithm Functions in SQL Graph Queries](https://docs.oracle.com/en/database/oracle/property-graph/26.2/spgdg/running-graph-algorithm-functions-sql-graph-queries.html)
 
 ## APEX Graph Visualization Plug-ins & Sample App
 
