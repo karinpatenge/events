@@ -1,5 +1,3 @@
-Source: https://objectstorage.us-chicago-1.oraclecloud.com/n/idb6enfdcxbl/b/Livelabs/o/sample-data/blue.txt
-
 
                        THE ADVENTURE OF THE BLUE CARBUNCLE
 
