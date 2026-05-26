@@ -18,3 +18,10 @@
 
 - [Oracle SQL Developer](https://marketplace.visualstudio.com/items?itemName=Oracle.sql-developer)
 - [Oracle SQL Developer Graph Graph Visualization](https://marketplace.visualstudio.com/items?itemName=Oracle.sql-developer-graph-visualization)
+
+## Jupyter Notebook
+
+- Getting Started with the Graph Visualization
+Extension in Jupyter Environments
+  - [Documentation](https://docs.oracle.com/en/database/oracle/property-graph/26.2/spgdg/getting-started-graph-visualization-extension-jupyter-environments.html)
+  - [Examples](https://github.com/oracle-samples/oracle-graph/tree/master/jupyter-notebooks/examples)
