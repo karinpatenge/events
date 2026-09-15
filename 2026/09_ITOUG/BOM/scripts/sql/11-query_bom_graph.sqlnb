@@ -1,0 +1,1177 @@
+cells:
+  - kind: 2
+    value: "--=====================================================================\
+      =========\r
+
+      --  11-query_bom_graph.sql\r
+
+      --  Last update: 2026-08-28\r
+
+      \r
+
+      --  Query BOM_GRAPH for visualization, BOM impact, and graph algorithm
+      analysis.\r
+
+      --\r
+
+      --  Run as BOMUSER after 10-create_bom_graph.sql.\r
+
+      --  The result returns one row per edge and can be large.\r
+
+      --=======================================================================\
+      =======\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: "-- Settings\r
+
+      ALTER SESSION ENABLE PARALLEL QUERY;\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: "-- Querying the BOM_GRAPH\r
+
+      SELECT\r
+
+      \  source_vertex_id,\r
+
+      \  edge_id,\r
+
+      \  destination_vertex_id\r
+
+      FROM\r
+
+      \  GRAPH_TABLE (\r
+
+      \    bom_graph\r
+
+      \    MATCH (source_vertex) -[edge]-> (destination_vertex)\r
+
+      \    COLUMNS (\r
+
+      \      VERTEX_ID(source_vertex) AS source_vertex_id,\r
+
+      \      EDGE_ID(edge) AS edge_id,\r
+
+      \      VERTEX_ID(destination_vertex) AS destination_vertex_id\r
+
+      \    )\r
+
+      \  );\r\n"
+    languageId: oracle-sql
+  - kind: 1
+    value: "--=====================================================================\
+      =========\r
+
+      --  Question 1: Which components are used by the greatest number of
+      released\r
+
+      --  BOMs?\r
+
+      --\r
+
+      --  Expected result:\r
+
+      --    * Up to 20 components, ranked by distinct released BOM usage.\r
+
+      --    * RELEASED_BOM_COUNT counts each BOM header once, even when the
+      component\r
+
+      --      occurs on more than one BOM item in that BOM.\r
+
+      --=======================================================================\
+      ======="
+    languageId: markdown
+  - kind: 2
+    value: "-- Find the most-used components in released BOMs\r
+
+      SELECT\r
+
+      \  component_id,\r
+
+      \  part_number,\r
+
+      \  component_name,\r
+
+      \  COUNT(DISTINCT bom_header_id) AS released_bom_count\r
+
+      FROM\r
+
+      \  GRAPH_TABLE (\r
+
+      \    bom_graph\r
+
+      \    MATCH\r
+
+      \      (header_node IS bom_header WHERE header_node.bom_status =
+      'RELEASED')\r
+
+      \      <-[bom_item_bom_edge IS bom_item_bom]-\r
+
+      \      (bom_item_node IS bom_item)\r
+
+      \      -[bom_item_component_edge IS bom_item_component]->\r
+
+      \      (component_node IS component)\r
+
+      \    COLUMNS (\r
+
+      \      header_node.bom_id AS bom_header_id,\r
+
+      \      component_node.component_id AS component_id,\r
+
+      \      component_node.part_number AS part_number,\r
+
+      \      component_node.component_name AS component_name\r
+
+      \    )\r
+
+      \  )\r
+
+      GROUP BY\r
+
+      \  component_id,\r
+
+      \  part_number,\r
+
+      \  component_name\r
+
+      ORDER BY\r
+
+      \  released_bom_count DESC,\r
+
+      \  part_number\r
+
+      FETCH FIRST 20 ROWS ONLY;\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: ""
+    languageId: oracle-sql
+  - kind: 1
+    value: "--=====================================================================\
+      =========\r
+
+      --  Question 2: For a selected BOM, what are the complete
+      parent-to-child\r
+
+      --  BOM-item paths, and which component is used at each item?\r
+
+      --\r
+
+      --  Expected result:\r
+
+      --    * Every BOM item in the selected BOM appears once as an indented
+      tree.\r
+
+      --    * The result includes the item's level, quantity, and component
+      details.\r
+
+      --    * No rows are returned when the BOM code does not identify a BOM
+      root.\r
+
+      --=======================================================================\
+      ======="
+    languageId: markdown
+  - kind: 2
+    value: "-- Select first a BOM code from this list for the hierarchy query
+      below\r
+
+      SELECT\r
+
+      \  bom_code,\r
+
+      \  bom_name,\r
+
+      \  vehicle_model,\r
+
+      \  powertrain_type,\r
+
+      \  bom_status\r
+
+      FROM\r
+
+      \  bom_headers\r
+
+      ORDER BY\r
+
+      \  bom_code\r
+
+      FETCH FIRST 20 ROWS ONLY;\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: "-- Shorter:\r
+
+      SELECT\r
+
+      \  bom_code || ' - ' || bom_name AS display_value,\r
+
+      \  bom_code AS return_value\r
+
+      FROM\r
+
+      \  bom_headers\r
+
+      ORDER BY\r
+
+      \  bom_code;\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: "-- Query a BOM code hierarchically\r
+
+      SELECT\r
+
+      \  bom_code,\r
+
+      \  level_num,\r
+
+      \  quantity,\r
+
+      \  LPAD(\r
+
+      \    ' ',\r
+
+      \    (level_num - 1) * 2\r
+
+      \  ) || find_number || '  ' || part_number || '  ' || component_name AS
+      bom_tree_line\r
+
+      FROM\r
+
+      \  GRAPH_TABLE (\r
+
+      \    bom_graph\r
+
+      \    MATCH\r
+
+      \      (header_node IS bom_header WHERE header_node.bom_code =
+      'BOM-2024-ASTERS-EV-0900')\r
+
+      \      <-[bom_item_bom_edge IS bom_item_bom]-\r
+
+      \      (root_item_node IS bom_item WHERE root_item_node.parent_item_id IS
+      NULL)\r
+
+      \      (<-[bom_item_parent_edge IS bom_item_parent]-){,6}\r
+
+      \      (bom_item_node IS bom_item)\r
+
+      \      -[bom_item_component_edge IS bom_item_component]->\r
+
+      \      (component_node IS component)\r
+
+      \    COLUMNS (\r
+
+      \      header_node.bom_code AS bom_code,\r
+
+      \      bom_item_node.level_num AS level_num,\r
+
+      \      bom_item_node.sequence_num AS sequence_num,\r
+
+      \      bom_item_node.find_number AS find_number,\r
+
+      \      bom_item_node.quantity AS quantity,\r
+
+      \      component_node.part_number AS part_number,\r
+
+      \      component_node.component_name AS component_name\r
+
+      \    )\r
+
+      \  )\r
+
+      ORDER BY\r
+
+      \  sequence_num;\r\n"
+    languageId: oracle-sql
+  - kind: 1
+    value: "--=====================================================================\
+      =========\r
+
+      --  Question 2 (visualization): Which vertices and edges form the
+      selected\r
+
+      --  BOM hierarchy and its component assignments?\r
+
+      --\r
+
+      --  Expected result:\r
+
+      --    * One row per vertex-edge-vertex traversal step in the selected
+      BOM\r
+
+      --      hierarchy.\r
+
+      --    * Each named vertex and edge in the path is returned as a native
+      SQL\r
+
+      --      property graph identifier.\r
+
+      --    * BOM_ITEM_PARENT_EDGE_IDS is a native JSON array because the
+      bounded\r
+
+      --      quantifier can match multiple parent edges.\r
+
+      --    * The result can be supplied directly to a graph visualization
+      tool.\r
+
+      --=======================================================================\
+      =======\r
+
+      \r
+
+      -- Switch to SQL code"
+    languageId: markdown
+  - kind: 1
+    value: "--=====================================================================\
+      =========\r
+
+      --  Question 3: Which component categories contain parts that are used in
+      both\r
+
+      --  ICE (Internal Combustion Engine) and EV (Electric Vehicles) vehicle
+      BOMs?\r
+
+      --\r
+
+      --  Expected result:\r
+
+      --    * Each row represents one traversal step from a shared category to
+      an\r
+
+      --      ICE or EV BOM that uses one of its components.\r
+
+      --    * The result includes native identifiers for every vertex and edge
+      in\r
+
+      --      the path, which can be used to visualize the cross-powertrain
+      use.\r
+
+      --=======================================================================\
+      ======="
+    languageId: markdown
+  - kind: 2
+    value: "-- Find categories used in ICE and EV BOMs\r
+
+      WITH\r
+
+      \  category_powertrain_usage AS (\r
+
+      \    SELECT\r
+
+      \      category_id,\r
+
+      \      powertrain_type\r
+
+      \    FROM\r
+
+      \      GRAPH_TABLE (\r
+
+      \        bom_graph\r
+
+      \        MATCH\r
+
+      \          (category_node IS category)\r
+
+      \          <-[component_category_edge IS component_category]-\r
+
+      \          (component_node IS component)\r
+
+      \          <-[bom_item_component_edge IS bom_item_component]-\r
+
+      \          (bom_item_node IS bom_item)\r
+
+      \          -[bom_item_bom_edge IS bom_item_bom]->\r
+
+      \          (header_node IS bom_header)\r
+
+      \        COLUMNS (\r
+
+      \          category_node.category_id AS category_id,\r
+
+      \          header_node.powertrain_type AS powertrain_type\r
+
+      \        )\r
+
+      \      )\r
+
+      \    GROUP BY\r
+
+      \      category_id,\r
+
+      \      powertrain_type\r
+
+      \  ),\r
+
+      \  shared_category AS (\r
+
+      \    SELECT\r
+
+      \      category_id\r
+
+      \    FROM\r
+
+      \      category_powertrain_usage\r
+
+      \    WHERE\r
+
+      \      powertrain_type IN (\r
+
+      \        'ICE',\r
+
+      \        'EV'\r
+
+      \      )\r
+
+      \    GROUP BY\r
+
+      \      category_id\r
+
+      \    HAVING\r
+
+      \      COUNT(DISTINCT powertrain_type) = 2\r
+
+      \  )\r
+
+      SELECT\r
+
+      \  graph_result.category_id,\r
+
+      \  graph_result.category_code,\r
+
+      \  graph_result.category_name,\r
+
+      \  graph_result.powertrain_type,\r
+
+      \  graph_result.bom_code,\r
+
+      \  graph_result.category_vertex_id,\r
+
+      \  graph_result.component_category_edge_id,\r
+
+      \  graph_result.component_vertex_id,\r
+
+      \  graph_result.bom_item_component_edge_id,\r
+
+      \  graph_result.bom_item_vertex_id,\r
+
+      \  graph_result.bom_item_bom_edge_id,\r
+
+      \  graph_result.bom_header_vertex_id,\r
+
+      \  graph_result.source_vertex_id,\r
+
+      \  graph_result.edge_id,\r
+
+      \  graph_result.destination_vertex_id\r
+
+      FROM\r
+
+      \  GRAPH_TABLE (\r
+
+      \    bom_graph\r
+
+      \    MATCH\r
+
+      \      (category_node IS category)\r
+
+      \      <-[component_category_edge IS component_category]-\r
+
+      \      (component_node IS component)\r
+
+      \      <-[bom_item_component_edge IS bom_item_component]-\r
+
+      \      (bom_item_node IS bom_item)\r
+
+      \      -[bom_item_bom_edge IS bom_item_bom]->\r
+
+      \      (header_node IS bom_header WHERE header_node.powertrain_type IN (\r
+
+      \        'ICE',\r
+
+      \        'EV'\r
+
+      \      ))\r
+
+      \    ONE ROW PER STEP (\r
+
+      \      step_source_node,\r
+
+      \      step_edge,\r
+
+      \      step_destination_node\r
+
+      \    )\r
+
+      \    COLUMNS (\r
+
+      \      category_node.category_id AS category_id,\r
+
+      \      category_node.category_code AS category_code,\r
+
+      \      category_node.category_name AS category_name,\r
+
+      \      header_node.powertrain_type AS powertrain_type,\r
+
+      \      header_node.bom_code AS bom_code,\r
+
+      \      VERTEX_ID(category_node) AS category_vertex_id,\r
+
+      \      EDGE_ID(component_category_edge) AS component_category_edge_id,\r
+
+      \      VERTEX_ID(component_node) AS component_vertex_id,\r
+
+      \      EDGE_ID(bom_item_component_edge) AS bom_item_component_edge_id,\r
+
+      \      VERTEX_ID(bom_item_node) AS bom_item_vertex_id,\r
+
+      \      EDGE_ID(bom_item_bom_edge) AS bom_item_bom_edge_id,\r
+
+      \      VERTEX_ID(header_node) AS bom_header_vertex_id,\r
+
+      \      VERTEX_ID(step_source_node) AS source_vertex_id,\r
+
+      \      EDGE_ID(step_edge) AS edge_id,\r
+
+      \      VERTEX_ID(step_destination_node) AS destination_vertex_id\r
+
+      \    )\r
+
+      \  ) graph_result\r
+
+      \  JOIN shared_category\r
+
+      \    ON shared_category.category_id = graph_result.category_id\r
+
+      ORDER BY\r
+
+      \  graph_result.category_code,\r
+
+      \  graph_result.powertrain_type,\r
+
+      \  graph_result.bom_code;\r\n"
+    languageId: oracle-sql
+  - kind: 1
+    value: "--=====================================================================\
+      =========\r
+
+      --  Question 4: Which BOMs contain components or variants that are
+      obsolete,\r
+
+      --  in pilot status, or otherwise no longer active?\r
+
+      --\r
+
+      --  Expected result:\r
+
+      --    * Each row represents one traversal step to an affected BOM item
+      and\r
+
+      --      its non-active component or variant.\r
+
+      --    * The native graph identifiers expose the affected BOM relationship
+      for\r
+
+      --      visualization.\r
+
+      --=======================================================================\
+      ======="
+    languageId: markdown
+  - kind: 2
+    value: "-- Find BOMs with non-active components or variants\r
+
+      SELECT\r
+
+      \  issue_type,\r
+
+      \  bom_code,\r
+
+      \  issue_code,\r
+
+      \  issue_name,\r
+
+      \  issue_status,\r
+
+      \  bom_header_vertex_id,\r
+
+      \  bom_item_bom_edge_id,\r
+
+      \  bom_item_vertex_id,\r
+
+      \  issue_edge_id,\r
+
+      \  issue_vertex_id,\r
+
+      \  source_vertex_id,\r
+
+      \  edge_id,\r
+
+      \  destination_vertex_id\r
+
+      FROM\r
+
+      \  GRAPH_TABLE (\r
+
+      \    bom_graph\r
+
+      \    MATCH\r
+
+      \      (header_node IS bom_header)\r
+
+      \      <-[bom_item_bom_edge IS bom_item_bom]-\r
+
+      \      (bom_item_node IS bom_item)\r
+
+      \      -[bom_item_component_edge IS bom_item_component]->\r
+
+      \      (component_node IS component WHERE component_node.lifecycle_status
+      <> 'ACTIVE')\r
+
+      \    ONE ROW PER STEP (\r
+
+      \      step_source_node,\r
+
+      \      step_edge,\r
+
+      \      step_destination_node\r
+
+      \    )\r
+
+      \    COLUMNS (\r
+
+      \      'COMPONENT' AS issue_type,\r
+
+      \      header_node.bom_code AS bom_code,\r
+
+      \      component_node.part_number AS issue_code,\r
+
+      \      component_node.component_name AS issue_name,\r
+
+      \      component_node.lifecycle_status AS issue_status,\r
+
+      \      VERTEX_ID(header_node) AS bom_header_vertex_id,\r
+
+      \      EDGE_ID(bom_item_bom_edge) AS bom_item_bom_edge_id,\r
+
+      \      VERTEX_ID(bom_item_node) AS bom_item_vertex_id,\r
+
+      \      EDGE_ID(bom_item_component_edge) AS issue_edge_id,\r
+
+      \      VERTEX_ID(component_node) AS issue_vertex_id,\r
+
+      \      VERTEX_ID(step_source_node) AS source_vertex_id,\r
+
+      \      EDGE_ID(step_edge) AS edge_id,\r
+
+      \      VERTEX_ID(step_destination_node) AS destination_vertex_id\r
+
+      \    )\r
+
+      \  )\r
+
+      UNION ALL\r
+
+      SELECT\r
+
+      \  issue_type,\r
+
+      \  bom_code,\r
+
+      \  issue_code,\r
+
+      \  issue_name,\r
+
+      \  issue_status,\r
+
+      \  bom_header_vertex_id,\r
+
+      \  bom_item_bom_edge_id,\r
+
+      \  bom_item_vertex_id,\r
+
+      \  issue_edge_id,\r
+
+      \  issue_vertex_id,\r
+
+      \  source_vertex_id,\r
+
+      \  edge_id,\r
+
+      \  destination_vertex_id\r
+
+      FROM\r
+
+      \  GRAPH_TABLE (\r
+
+      \    bom_graph\r
+
+      \    MATCH\r
+
+      \      (header_node IS bom_header)\r
+
+      \      <-[bom_item_bom_edge IS bom_item_bom]-\r
+
+      \      (bom_item_node IS bom_item)\r
+
+      \      -[bom_item_variant_edge IS bom_item_variant]->\r
+
+      \      (variant_node IS component_variant WHERE
+      variant_node.variant_status <> 'ACTIVE')\r
+
+      \    ONE ROW PER STEP (\r
+
+      \      step_source_node,\r
+
+      \      step_edge,\r
+
+      \      step_destination_node\r
+
+      \    )\r
+
+      \    COLUMNS (\r
+
+      \      'VARIANT' AS issue_type,\r
+
+      \      header_node.bom_code AS bom_code,\r
+
+      \      variant_node.variant_code AS issue_code,\r
+
+      \      variant_node.variant_name AS issue_name,\r
+
+      \      variant_node.variant_status AS issue_status,\r
+
+      \      VERTEX_ID(header_node) AS bom_header_vertex_id,\r
+
+      \      EDGE_ID(bom_item_bom_edge) AS bom_item_bom_edge_id,\r
+
+      \      VERTEX_ID(bom_item_node) AS bom_item_vertex_id,\r
+
+      \      EDGE_ID(bom_item_variant_edge) AS issue_edge_id,\r
+
+      \      VERTEX_ID(variant_node) AS issue_vertex_id,\r
+
+      \      VERTEX_ID(step_source_node) AS source_vertex_id,\r
+
+      \      EDGE_ID(step_edge) AS edge_id,\r
+
+      \      VERTEX_ID(step_destination_node) AS destination_vertex_id\r
+
+      \    )\r
+
+      \  )\r
+
+      ORDER BY\r
+
+      \  bom_code,\r
+
+      \  issue_type,\r
+
+      \  issue_code;\r\n"
+    languageId: oracle-sql
+  - kind: 1
+    value: "--=====================================================================\
+      =========\r
+
+      --  Question 5: For a selected component revision, which BOMs and BOM
+      items\r
+
+      --  are affected, and which other revisions of the same component are\r
+
+      --  available?\r
+
+      --\r
+
+      --  Expected result:\r
+
+      --    * Each row represents a traversal step in the affected-BOM path or
+      the\r
+
+      --      other-revision path for the selected component revision.\r
+
+      --    * Other revisions are returned even when they are not used by a
+      BOM.\r
+
+      --    * The result includes native identifiers for every vertex and edge
+      in\r
+
+      --      the impact path, which can be used to visualize the revision
+      impact.\r
+
+      --=======================================================================\
+      ======="
+    languageId: markdown
+  - kind: 2
+    value: "-- List used component revisions with alternatives\r
+
+      SELECT\r
+
+      \  revision.revision_id,\r
+
+      \  component.part_number,\r
+
+      \  revision.revision_code,\r
+
+      \  revision.revision_status,\r
+
+      \  revision.revision_date,\r
+
+      \  COUNT(DISTINCT item.bom_id) AS affected_bom_count\r
+
+      FROM\r
+
+      \  bom_component_revisions revision\r
+
+      \  JOIN bom_components component\r
+
+      \    ON component.component_id = revision.component_id\r
+
+      \  JOIN bom_items item\r
+
+      \    ON item.revision_id = revision.revision_id\r
+
+      WHERE\r
+
+      \  EXISTS (\r
+
+      \    SELECT\r
+
+      \      1\r
+
+      \    FROM\r
+
+      \      bom_component_revisions other_revision\r
+
+      \    WHERE\r
+
+      \      other_revision.component_id = revision.component_id\r
+
+      \      AND other_revision.revision_id <> revision.revision_id\r
+
+      \  )\r
+
+      GROUP BY\r
+
+      \  revision.revision_id,\r
+
+      \  component.part_number,\r
+
+      \  revision.revision_code,\r
+
+      \  revision.revision_status,\r
+
+      \  revision.revision_date\r
+
+      ORDER BY\r
+
+      \  affected_bom_count DESC,\r
+
+      \  component.part_number,\r
+
+      \  revision.revision_code\r
+
+      FETCH FIRST 200 ROWS ONLY;\r\n"
+    languageId: oracle-sql
+  - kind: 1
+    value: "--=====================================================================\
+      =========\r
+
+      --  Question 6: Which components are structurally critical across the
+      BOM\r
+
+      --  portfolio and therefore have the widest potential change impact?\r
+
+      --\r
+
+      --  Expected result:\r
+
+      --    * The 20 highest PageRank component vertices are selected from the
+      full\r
+
+      --      BOM graph.\r
+
+      --    * Each row represents a BOM-use traversal step for one of those\r
+
+      --      components and includes its PageRank score and native graph IDs.\r
+
+      --\r
+
+      --  Prerequisite:\r
+
+      --    * EXECUTE on DBMS_OGA, plus graph query privileges.\r
+
+      --=======================================================================\
+      ======="
+    languageId: markdown
+  - kind: 2
+    value: "-- Find structurally critical components\r
+
+      WITH\r
+
+      \  component_ranks AS (\r
+
+      \    SELECT\r
+
+      \      component_id,\r
+
+      \      part_number,\r
+
+      \      component_name,\r
+
+      \      component_pagerank\r
+
+      \    FROM\r
+
+      \      GRAPH_TABLE (\r
+
+      \        DBMS_OGA.PAGERANK (\r
+
+      \          bom_graph,\r
+
+      \          PROPERTY(VERTEX OUTPUT component_pagerank),\r
+
+      \          50,\r
+
+      \          0.000001d,\r
+
+      \          0.85d,\r
+
+      \          FALSE\r
+
+      \        )\r
+
+      \        MATCH (component_node IS component)\r
+
+      \        COLUMNS (\r
+
+      \          component_node.component_id AS component_id,\r
+
+      \          component_node.part_number AS part_number,\r
+
+      \          component_node.component_name AS component_name,\r
+
+      \          component_node.component_pagerank AS component_pagerank\r
+
+      \        )\r
+
+      \      )\r
+
+      \  ),\r
+
+      \  top_components AS (\r
+
+      \    SELECT\r
+
+      \      component_id,\r
+
+      \      part_number,\r
+
+      \      component_name,\r
+
+      \      component_pagerank\r
+
+      \    FROM\r
+
+      \      component_ranks\r
+
+      \    ORDER BY\r
+
+      \      component_pagerank DESC,\r
+
+      \      part_number\r
+
+      \    FETCH FIRST 20 ROWS ONLY\r
+
+      \  )\r
+
+      SELECT\r
+
+      \  top_components.component_pagerank,\r
+
+      \  top_components.part_number,\r
+
+      \  top_components.component_name,\r
+
+      \  graph_result.bom_code,\r
+
+      \  graph_result.bom_header_vertex_id,\r
+
+      \  graph_result.bom_item_bom_edge_id,\r
+
+      \  graph_result.bom_item_vertex_id,\r
+
+      \  graph_result.bom_item_component_edge_id,\r
+
+      \  graph_result.component_vertex_id,\r
+
+      \  graph_result.source_vertex_id,\r
+
+      \  graph_result.edge_id,\r
+
+      \  graph_result.destination_vertex_id\r
+
+      FROM\r
+
+      \  GRAPH_TABLE (\r
+
+      \    bom_graph\r
+
+      \    MATCH\r
+
+      \      (header_node IS bom_header)\r
+
+      \      <-[bom_item_bom_edge IS bom_item_bom]-\r
+
+      \      (bom_item_node IS bom_item)\r
+
+      \      -[bom_item_component_edge IS bom_item_component]->\r
+
+      \      (component_node IS component)\r
+
+      \    ONE ROW PER STEP (\r
+
+      \      step_source_node,\r
+
+      \      step_edge,\r
+
+      \      step_destination_node\r
+
+      \    )\r
+
+      \    COLUMNS (\r
+
+      \      component_node.component_id AS component_id,\r
+
+      \      header_node.bom_code AS bom_code,\r
+
+      \      VERTEX_ID(header_node) AS bom_header_vertex_id,\r
+
+      \      EDGE_ID(bom_item_bom_edge) AS bom_item_bom_edge_id,\r
+
+      \      VERTEX_ID(bom_item_node) AS bom_item_vertex_id,\r
+
+      \      EDGE_ID(bom_item_component_edge) AS bom_item_component_edge_id,\r
+
+      \      VERTEX_ID(component_node) AS component_vertex_id,\r
+
+      \      VERTEX_ID(step_source_node) AS source_vertex_id,\r
+
+      \      EDGE_ID(step_edge) AS edge_id,\r
+
+      \      VERTEX_ID(step_destination_node) AS destination_vertex_id\r
+
+      \    )\r
+
+      \  ) graph_result\r
+
+      \  JOIN top_components\r
+
+      \    ON top_components.component_id = graph_result.component_id\r
+
+      ORDER BY\r
+
+      \  top_components.component_pagerank DESC,\r
+
+      \  top_components.part_number,\r
+
+      \  graph_result.bom_code;\r\n"
+    languageId: oracle-sql
+  - kind: 1
+    value: "--=====================================================================\
+      =========\r
+
+      --  Question 7: Which BOMs, assemblies, components, and revisions form\r
+
+      --  disconnected islands outside the main product structure?\r
+
+      --\r
+
+      --  Expected result:\r
+
+      --    * Each graph edge is returned with the weak-component ID of both\r
+
+      --      endpoint vertices.\r
+
+      --    * Equal WCC_GROUP_ID values identify vertices in the same
+      undirected\r
+
+      --      connected component and can be used to color the visualization.\r
+
+      --\r
+
+      --  Prerequisite:\r
+
+      --    * EXECUTE on DBMS_OGA, plus graph query privileges.\r
+
+      --=======================================================================\
+      ======="
+    languageId: markdown
+  - kind: 2
+    value: "-- Find disconnected BOM graph islands\r
+
+      SELECT\r
+
+      \  source_wcc_group_id,\r
+
+      \  destination_wcc_group_id,\r
+
+      \  source_vertex_id,\r
+
+      \  edge_id,\r
+
+      \  destination_vertex_id,\r
+
+      \  step_source_vertex_id,\r
+
+      \  step_edge_id,\r
+
+      \  step_destination_vertex_id\r
+
+      FROM\r
+
+      \  GRAPH_TABLE (\r
+
+      \    DBMS_OGA.WCC (\r
+
+      \      bom_graph,\r
+
+      \      PROPERTY(VERTEX OUTPUT wcc_group_id)\r
+
+      \    )\r
+
+      \    MATCH\r
+
+      \      (source_node)\r
+
+      \      -[graph_edge]->\r
+
+      \      (destination_node)\r
+
+      \    ONE ROW PER STEP (\r
+
+      \      step_source_node,\r
+
+      \      step_edge,\r
+
+      \      step_destination_node\r
+
+      \    )\r
+
+      \    COLUMNS (\r
+
+      \      source_node.wcc_group_id AS source_wcc_group_id,\r
+
+      \      destination_node.wcc_group_id AS destination_wcc_group_id,\r
+
+      \      VERTEX_ID(source_node) AS source_vertex_id,\r
+
+      \      EDGE_ID(graph_edge) AS edge_id,\r
+
+      \      VERTEX_ID(destination_node) AS destination_vertex_id,\r
+
+      \      VERTEX_ID(step_source_node) AS step_source_vertex_id,\r
+
+      \      EDGE_ID(step_edge) AS step_edge_id,\r
+
+      \      VERTEX_ID(step_destination_node) AS step_destination_vertex_id\r
+
+      \    )\r
+
+      \  );\r\n"
+    languageId: oracle-sql
