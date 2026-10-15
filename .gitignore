@@ -8,11 +8,13 @@
 .credentials
 .par*
 *_kp.sql
+*Unfallorte*
 
 # 2026/10_HrOUG (HrOUG 2026, Spatial Meets AI): publish only what attendees need to run the demos.
 # Everything else in the folder stays local (planning docs, slide graphics, generated data, internal scripts).
 /2026/10_HrOUG/*
 !/2026/10_HrOUG/scripts/
+!/2026/10_HrOUG/data/
 /2026/10_HrOUG/scripts/*
 # Tram 6 (stops A-D, track)
 !/2026/10_HrOUG/scripts/create_table_tram_stations.sql
@@ -21,10 +23,7 @@
 !/2026/10_HrOUG/scripts/insert_tram_lines.sql
 # Demo 1: streaming and vector tiles, map, July positions
 !/2026/10_HrOUG/scripts/demo1_streaming_vector_tiles.sqlnb
-!/2026/10_HrOUG/scripts/demo1_zet_map.html
-!/2026/10_HrOUG/scripts/gen_zet_july_positions.py
 # Demo 2: surface temperature raster, H3 cells, Spatial AI notebooks
-!/2026/10_HrOUG/scripts/gen_zg_lst_geotiff.py
 !/2026/10_HrOUG/scripts/load_raster_using_gdal.txt
 !/2026/10_HrOUG/scripts/demo2_prep_zg_h3_cells.sqlnb
 !/2026/10_HrOUG/scripts/demo2_spatial_dependence.dsnb
