@@ -7,11 +7,7 @@
 *.secret*
 .credentials
 .par*
-
-!/2025/06_AOUG/scripts/example_1_sholmes_lexical_graph_kp.sql
-!/2025/06_TDWI/scripts/example_1_sholmes_lexical_graph_kp.sql
-
-/2025/05_APEX Connect/data/Unfallorte_2023*
+*_kp.sql
 
 # 2026/10_HrOUG (HrOUG 2026, Spatial Meets AI): publish only what attendees need to run the demos.
 # Everything else in the folder stays local (planning docs, slide graphics, generated data, internal scripts).
