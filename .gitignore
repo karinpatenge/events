@@ -15,6 +15,7 @@
 /2026/10_HrOUG/*
 !/2026/10_HrOUG/scripts/
 !/2026/10_HrOUG/data/
+!/2026/10_HrOUG/presentations/
 /2026/10_HrOUG/scripts/*
 # Tram 6 (stops A-D, track)
 !/2026/10_HrOUG/scripts/create_table_tram_stations.sql
