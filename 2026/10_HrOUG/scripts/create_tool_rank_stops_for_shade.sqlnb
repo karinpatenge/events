@@ -1,0 +1,414 @@
+cells:
+  - kind: 1
+    value: |-
+      # Create the Select AI Agent Tool RANK_STOPS_FOR_SHADE
+
+      **HrOUG 2026 · Spatial Meets AI · Act 4, Pillar 2**
+
+      Author: Karin Patenge · October 2026
+
+      This notebook creates the function `RANK_STOPS_FOR_SHADE`, registers it as a Select AI Agent tool and sets up the agent team `ZG_SHADE_TEAM`. The tool answers: *Which ZET stops in heat islands should get trees, and which a shelter?*
+
+      * **Candidates:** stops in heat islands (LISA high-high, `QUADRANT = 1`), from `demo2_spatial_dependence.dsnb`.
+      * **Merged stops:** stations with the same name within 500 m count as one stop (for example the tram and the bus station of Glavni kolodvor). Departures are added up, the other values come from the busiest station.
+      * **TREES:** stops where +15 percentage points of tree canopy instead of built-up area (capped at the built-up share) cool the H3 cell by at least 1 °C (local GWR coefficient), largest cooling first (`demo2_spatial_heterogeneity.dsnb`).
+      * **SHELTER:** the other heat-island stops, where trees help less, busiest first (weekday departures, `ZET_STOPS` from GTFS).
+      * **District** of each stop from the H3 cell (`demo2_spatial_leakage.dsnb`).
+
+      **Prerequisites**
+
+      * Connect as the demo schema `HROUG2026`, which owns `ZET_STOPS` and the Spatial AI result tables `ZET_STOPS_LISA`, `ZG_H3_GWR`, `ZG_H3_FEATURES` and `ZG_H3_SLX` (section 1 checks them).
+      * `EXECUTE` on `DBMS_CLOUD_AI` and `DBMS_CLOUD_AI_AGENT` (granted by `spatial_using_select_ai.sql`, part 1).
+      * For the agent team (section 4): the AI profile `OCI_GENAI_PROFILE` (`spatial_using_select_ai.sql`, part 2; its credential comes from `create_credential_oci_genai.sql`). Section 1 checks it.
+
+      **Design notes**
+
+      * The spatial logic stays in the function: the LLM only picks the tool and passes numbers.
+      * `AUTHID DEFINER`: callers (agent team, MCP clients) get the ranking, not the tables.
+      * The function returns JSON as a CLOB, like the sample tools of the MCP Server documentation. Invalid input returns `{"error": "..."}` so that the LLM can correct itself.
+      * The input names (`tree_stops`, `shelter_stops`, `district`, `vehicle`) match the `tool_inputs` in section 3.
+
+      Documentation: [DBMS_CLOUD_AI_AGENT package](https://docs.oracle.com/en/cloud/paas/autonomous-database/serverless/adbsb/dbms-cloud-ai-agent-package.html) · [MCP Server of Autonomous AI Database](https://docs.oracle.com/en/cloud/paas/autonomous-database/serverless/adbsb/use-mcp-server.html)
+
+      Next: `run_tool_rank_stops_for_shade.sqlnb` tests the function and runs the agent team. File encoding: UTF-8 (Croatian diacritics).
+    languageId: markdown
+  - kind: 1
+    value: |-
+      ## Table of Contents
+
+      1. Prerequisite checks
+      2. The function behind the tool
+      3. Register the function as a Select AI Agent tool (re-runnable)
+      4. Agent team for SELECT AI AGENT in SQL (re-runnable)
+      5. MCP Server (no SQL)
+    languageId: markdown
+  - kind: 1
+    value: "## 1. Prerequisite checks"
+    languageId: markdown
+  - kind: 2
+    value: >
+      -- Expected: 5 rows
+
+      SELECT
+        table_name,
+        num_rows
+      FROM
+        user_tables
+      WHERE
+        table_name IN ('ZET_STOPS', 'ZET_STOPS_LISA', 'ZG_H3_GWR', 'ZG_H3_FEATURES', 'ZG_H3_SLX')
+      ORDER BY
+        table_name;
+    languageId: oracle-sql
+  - kind: 2
+    value: |
+      -- Expected: 1 row, ENABLED (the AI profile of the agent in section 4)
+      SELECT
+        profile_name,
+        status
+      FROM
+        user_cloud_ai_profiles
+      WHERE
+        profile_name = 'OCI_GENAI_PROFILE';
+    languageId: oracle-sql
+  - kind: 1
+    value: "## 2. The function behind the tool"
+    languageId: markdown
+  - kind: 2
+    value: >
+      CREATE OR REPLACE FUNCTION rank_stops_for_shade (
+        tree_stops     IN NUMBER   DEFAULT 0,
+        shelter_stops  IN NUMBER   DEFAULT 0,
+        district       IN VARCHAR2 DEFAULT NULL,
+        vehicle        IN VARCHAR2 DEFAULT NULL
+      ) RETURN CLOB
+        AUTHID DEFINER
+      IS
+        c_canopy_gain_pp      CONSTANT NUMBER := 15;    -- what-if of the heterogeneity notebook
+        c_min_tree_cooling_c  CONSTANT NUMBER := 1;     -- below 1 °C trees help little: shelter instead
+        c_merge_distance_m    CONSTANT NUMBER := 500;   -- stations with the same name closer than this are one stop
+        c_max_stops           CONSTANT NUMBER := 100;   -- per action, keeps the answer small for the LLM
+
+        l_tree_stops     NUMBER         := NVL(rank_stops_for_shade.tree_stops, 0);
+        l_shelter_stops  NUMBER         := NVL(rank_stops_for_shade.shelter_stops, 0);
+        l_district       VARCHAR2(4000) := TRANSLATE(UPPER(TRIM(rank_stops_for_shade.district)), 'ČĆŽŠĐ', 'CCZSD');
+        l_vehicle        VARCHAR2(4000) := UPPER(TRIM(rank_stops_for_shade.vehicle));
+        l_result         CLOB;
+
+        FUNCTION error_json (p_message IN VARCHAR2) RETURN CLOB IS
+          l_error JSON_OBJECT_T := JSON_OBJECT_T();
+        BEGIN
+          l_error.put('error', p_message);
+          RETURN l_error.to_clob;
+        END error_json;
+      BEGIN
+        -- Input checks: a readable message instead of an ORA- error
+        IF l_tree_stops <> TRUNC(l_tree_stops) OR l_shelter_stops <> TRUNC(l_shelter_stops)
+           OR l_tree_stops NOT BETWEEN 0 AND c_max_stops OR l_shelter_stops NOT BETWEEN 0 AND c_max_stops THEN
+          RETURN error_json('tree_stops and shelter_stops must be whole numbers between 0 and ' || c_max_stops || '.');
+        END IF;
+        IF l_tree_stops + l_shelter_stops = 0 THEN
+          RETURN error_json('Ask for at least one stop: tree_stops or shelter_stops must be greater than 0.');
+        END IF;
+        IF l_vehicle IS NOT NULL AND l_vehicle NOT IN ('TRAM', 'BUS') THEN
+          RETURN error_json('vehicle must be TRAM, BUS or empty.');
+        END IF;
+
+        WITH
+          stations AS (                                             -- one row per GTFS station in a heat island
+            SELECT
+              l.stop_id,
+              l.stop_name,
+              s.transport_mode,
+              s.weekday_departures,
+              ROUND(CAST(l.lst_c AS NUMBER), 1) AS lst_c,           -- tables written from Python may hold BINARY_DOUBLE
+              f.canopy_pct,
+              LEAST(c_canopy_gain_pp, f.built_pct) AS canopy_gain_pp,
+              ROUND(CAST(g.cooling_10pp_c AS NUMBER) / 10 * LEAST(c_canopy_gain_pp, f.built_pct), 2) AS tree_cooling_c,
+              x.district_name,
+              s.geom,
+              ROW_NUMBER() OVER (PARTITION BY l.stop_id ORDER BY l.h3_id) AS rn
+            FROM
+              zet_stops_lisa l
+              JOIN zet_stops s       ON s.stop_id = l.stop_id
+              JOIN zg_h3_gwr g       ON g.h3_id = l.h3_id
+              JOIN zg_h3_features f  ON f.h3_id = l.h3_id
+              LEFT JOIN zg_h3_slx x  ON x.h3_id = l.h3_id
+            WHERE
+              l.quadrant = 1                                        -- heat island (LISA high-high)
+              AND (l_district IS NULL
+                   OR TRANSLATE(UPPER(x.district_name), 'ČĆŽŠĐ', 'CCZSD') LIKE '%' || l_district || '%')
+              AND (l_vehicle IS NULL OR s.transport_mode LIKE '%' || l_vehicle || '%')   -- BUS, TRAM or BUS/TRAM
+          ),
+          pairs AS (                                                -- stations with the same name within 500 m
+            SELECT
+              s1.stop_id,
+              s2.stop_id            AS other_id,
+              s2.weekday_departures AS other_departures
+            FROM
+              stations s1
+              JOIN stations s2 ON s2.stop_name = s1.stop_name AND s2.rn = 1
+            WHERE
+              s1.rn = 1
+              AND (s2.stop_id = s1.stop_id
+                   OR SDO_GEOM.SDO_DISTANCE(s2.geom, s1.geom, 0.05, 'unit=M') <= c_merge_distance_m)
+          ),
+          anchors AS (                                              -- the busiest station of each group names the stop
+            SELECT
+              p.stop_id,
+              MIN(p.other_id) KEEP (DENSE_RANK FIRST ORDER BY p.other_departures DESC, p.other_id) AS anchor_id
+            FROM
+              pairs p
+            GROUP BY
+              p.stop_id
+          ),
+          stops AS (                                                -- one row per stop
+            SELECT
+              a.anchor_id,
+              MAX(st.stop_name) AS stop_name,
+              LISTAGG(st.stop_id, ', ') WITHIN GROUP (ORDER BY st.weekday_departures DESC, st.stop_id) AS stop_ids,
+              COUNT(*) AS stations,
+              SUM(st.weekday_departures) AS weekday_departures,
+              CASE
+                WHEN MAX(CASE WHEN st.transport_mode LIKE '%BUS%' THEN 1 ELSE 0 END) = 1
+                 AND MAX(CASE WHEN st.transport_mode LIKE '%TRAM%' THEN 1 ELSE 0 END) = 1 THEN 'BUS/TRAM'
+                ELSE MAX(st.transport_mode) KEEP (DENSE_RANK FIRST ORDER BY st.weekday_departures DESC, st.stop_id)
+              END AS transport_mode,
+              MAX(st.lst_c)          KEEP (DENSE_RANK FIRST ORDER BY st.weekday_departures DESC, st.stop_id) AS lst_c,
+              MAX(st.canopy_pct)     KEEP (DENSE_RANK FIRST ORDER BY st.weekday_departures DESC, st.stop_id) AS canopy_pct,
+              MAX(st.canopy_gain_pp) KEEP (DENSE_RANK FIRST ORDER BY st.weekday_departures DESC, st.stop_id) AS canopy_gain_pp,
+              MAX(st.tree_cooling_c) KEEP (DENSE_RANK FIRST ORDER BY st.weekday_departures DESC, st.stop_id) AS tree_cooling_c,
+              MAX(st.district_name)  KEEP (DENSE_RANK FIRST ORDER BY st.weekday_departures DESC, st.stop_id) AS district_name,
+              MAX(ROUND(st.geom.sdo_point.x, 6)) KEEP (DENSE_RANK FIRST ORDER BY st.weekday_departures DESC, st.stop_id) AS lon,
+              MAX(ROUND(st.geom.sdo_point.y, 6)) KEEP (DENSE_RANK FIRST ORDER BY st.weekday_departures DESC, st.stop_id) AS lat
+            FROM
+              stations st
+              JOIN anchors a ON a.stop_id = st.stop_id
+            WHERE
+              st.rn = 1
+            GROUP BY
+              a.anchor_id
+          ),
+          candidates AS (
+            SELECT
+              sp.*,
+              CASE WHEN sp.tree_cooling_c >= c_min_tree_cooling_c THEN 'TREES' ELSE 'SHELTER' END AS action
+            FROM
+              stops sp
+          ),
+          ranked AS (
+            SELECT
+              c.*,
+              ROW_NUMBER() OVER (
+                PARTITION BY c.action
+                ORDER BY CASE c.action WHEN 'TREES' THEN c.tree_cooling_c END DESC NULLS LAST,
+                         c.weekday_departures DESC,
+                         c.lst_c DESC,
+                         c.anchor_id) AS action_rank
+            FROM
+              candidates c
+          ),
+          picks AS (
+            SELECT
+              r.*
+            FROM
+              ranked r
+            WHERE
+              (r.action = 'TREES'   AND r.action_rank <= l_tree_stops)
+              OR (r.action = 'SHELTER' AND r.action_rank <= l_shelter_stops)
+          )
+        SELECT
+          JSON_OBJECT(
+            'question'                VALUE 'Which ZET stops in heat islands should get trees, and which a shelter?',
+            'district_filter'         VALUE rank_stops_for_shade.district,
+            'vehicle_filter'          VALUE l_vehicle,
+            'tree_stops_requested'    VALUE l_tree_stops,
+            'shelter_stops_requested' VALUE l_shelter_stops,
+            'heat_island_stops'       VALUE (SELECT COUNT(*) FROM candidates),
+            'tree_candidates'         VALUE (SELECT COUNT(*) FROM candidates WHERE action = 'TREES'),
+            'shelter_candidates'      VALUE (SELECT COUNT(*) FROM candidates WHERE action = 'SHELTER'),
+            'method'                  VALUE 'Stops in heat islands (LISA high-high over the 6 nearest H3 cells). '
+                                         || 'Stations with the same name within 500 m count as one stop: departures '
+                                         || 'are added up, the other values come from the busiest station. '
+                                         || 'TREES: stops where up to 15 percentage points more tree canopy instead of '
+                                         || 'built-up area cool the H3 cell by at least 1 °C (local GWR coefficient), '
+                                         || 'largest cooling first. SHELTER: the other heat-island stops, busiest first '
+                                         || '(weekday departures).',
+            'note'                    VALUE 'Temperatures are ground-surface temperatures (Landsat 8, 2 August 2026, '
+                                         || '11:39 in Zagreb), not air temperatures. tree_cooling_c is modelled for the '
+                                         || 'H3 cell around the stop (about 0.1 km²); 15 percentage points of canopy '
+                                         || 'there are roughly 15,000 m² of tree crown, a street-greening programme '
+                                         || 'rather than a few trees.',
+            'recommendations'         VALUE COALESCE(
+                                        (SELECT
+                                           JSON_ARRAYAGG(
+                                             JSON_OBJECT(
+                                               'action'             VALUE p.action,
+                                               'rank'               VALUE p.action_rank,
+                                               'stop_name'          VALUE p.stop_name,
+                                               'stop_ids'           VALUE p.stop_ids,
+                                               'stations'           VALUE p.stations,
+                                               'district'           VALUE p.district_name,
+                                               'vehicles'           VALUE p.transport_mode,
+                                               'weekday_departures' VALUE p.weekday_departures,
+                                               'surface_temp_c'     VALUE p.lst_c,
+                                               'canopy_pct'         VALUE p.canopy_pct,
+                                               'tree_cooling_c'     VALUE p.tree_cooling_c,
+                                               'lon'                VALUE p.lon,
+                                               'lat'                VALUE p.lat,
+                                               'reason'             VALUE
+                                                 CASE p.action
+                                                   WHEN 'TREES' THEN
+                                                     '+' || TO_CHAR(ROUND(p.canopy_gain_pp)) || ' pp tree canopy cools the ground by about '
+                                                     || TO_CHAR(p.tree_cooling_c, 'FM990.0') || ' °C'
+                                                   ELSE
+                                                     'Trees cool only ' || TO_CHAR(p.tree_cooling_c, 'FM990.0') || ' °C here; '
+                                                     || p.weekday_departures || ' departures per weekday'
+                                                 END)
+                                             ORDER BY CASE p.action WHEN 'TREES' THEN 1 ELSE 2 END, p.action_rank
+                                             RETURNING CLOB)
+                                         FROM
+                                           picks p),
+                                        TO_CLOB('[]')) FORMAT JSON
+            RETURNING CLOB)
+        INTO l_result
+        FROM dual;
+
+        RETURN l_result;
+      END rank_stops_for_shade;
+
+      /
+    languageId: oracle-sql
+  - kind: 1
+    value: "## 3. Register the function as a Select AI Agent tool (re-runnable)"
+    languageId: markdown
+  - kind: 2
+    value: >
+      --    The MCP Server of Autonomous AI Database exposes this tool to MCP
+      clients that sign in as this schema.
+
+      BEGIN
+        DBMS_CLOUD_AI_AGENT.DROP_TOOL(tool_name => 'RANK_STOPS_FOR_SHADE', force => TRUE);
+        DBMS_CLOUD_AI_AGENT.CREATE_TOOL(
+          tool_name   => 'RANK_STOPS_FOR_SHADE',
+          attributes  => q'~{
+            "instruction": "Ranks ZET tram and bus stops in the heat islands of Zagreb for shade measures, based on the city heat analysis (Landsat surface temperature, LISA heat islands, a GWR model of tree cooling, ZET timetable). Call it whenever the user asks where to plant trees or build shelters at stops, or which stops need shade first, and never rank stops yourself. TREES go to the stops where more tree canopy cools the most; SHELTER goes to the busiest stops where trees cool less than 1 °C. Stations with the same name within 500 m count as one stop. Returns JSON with counts, method, note and recommendations (action, rank, stop_name, stop_ids, stations, district, vehicles, weekday_departures, surface_temp_c, tree_cooling_c, lon, lat, reason). Temperatures are ground-surface temperatures, not air temperatures.",
+            "function": "RANK_STOPS_FOR_SHADE",
+            "tool_inputs": [
+              {"name": "tree_stops",    "description": "Number of stops to recommend for tree planting, 0 to 100. A number of stop locations, not a number of trees."},
+              {"name": "shelter_stops", "description": "Number of stops to recommend for a shelter, 0 to 100."},
+              {"name": "district",      "description": "Optional. Part of a Zagreb city district name, for example Donji grad, Novi Zagreb, Tresnjevka or Sesvete. Leave empty for the whole city."},
+              {"name": "vehicle",       "description": "Optional. TRAM or BUS to consider only stops served by that transport mode. Leave empty for all stops."}
+            ]
+          }~',
+          description => 'HrOUG 2026, Act 4: ranks heat-island ZET stops for trees and shelters'
+        );
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      -- Check the tool (if the view name differs in your release, DESCRIBE
+      USER_AI_AGENT_TOOLS first)
+
+      SELECT
+        tool_name,
+        status,
+        description,
+        created
+      FROM
+        user_ai_agent_tools
+      WHERE
+        tool_name = 'RANK_STOPS_FOR_SHADE';
+    languageId: oracle-sql
+  - kind: 1
+    value: "## 4. Agent team for SELECT AI AGENT in SQL (re-runnable)"
+    languageId: markdown
+  - kind: 2
+    value: >
+      --    Not needed for MCP clients: there the client's LLM plans and calls
+      the tool itself.
+
+      BEGIN
+        DBMS_CLOUD_AI_AGENT.DROP_TEAM(team_name => 'ZG_SHADE_TEAM', force => TRUE);
+        DBMS_CLOUD_AI_AGENT.DROP_TASK(task_name => 'ZG_SHADE_TASK', force => TRUE);
+        DBMS_CLOUD_AI_AGENT.DROP_AGENT(agent_name => 'ZG_SHADE_PLANNER', force => TRUE);
+
+        DBMS_CLOUD_AI_AGENT.CREATE_AGENT(
+          agent_name  => 'ZG_SHADE_PLANNER',
+          attributes  => q'~{
+            "profile_name": "OCI_GENAI_PROFILE",
+            "role": "You are an urban climate planner for the City of Zagreb. You decide where shade measures at ZET tram and bus stops help most, based on the city heat analysis. Answer in the language of the question.",
+            "enable_human_tool": "false"
+          }~',
+          description => 'HrOUG 2026, Demo 3: planner agent for shade at ZET stops'
+        );
+
+        DBMS_CLOUD_AI_AGENT.CREATE_TASK(
+          task_name   => 'ZG_SHADE_TASK',
+          attributes  => q'~{
+            "instruction": "Answer this planning question: {query}. Always call the RANK_STOPS_FOR_SHADE tool to get the ranking and never invent stops or numbers. Pass the number of stop locations for trees as tree_stops and for shelters as shelter_stops. Present the result as a short list per action: stop, district, surface temperature, expected cooling by trees, weekday departures, and the reason. End with the note on surface temperature from the tool result.",
+            "tools": ["RANK_STOPS_FOR_SHADE"]
+          }~',
+          description => 'HrOUG 2026, Demo 3: rank ZET stops for trees and shelters'
+        );
+
+        DBMS_CLOUD_AI_AGENT.CREATE_TEAM(
+          team_name   => 'ZG_SHADE_TEAM',
+          attributes  => '{"agents": [{"name": "ZG_SHADE_PLANNER", "task": "ZG_SHADE_TASK"}], "process": "sequential"}',
+          description => 'HrOUG 2026, Demo 3: shade planning team'
+        );
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      -- Check the agent and the team: expected ENABLED
+
+      SELECT agent_name, status FROM user_ai_agents WHERE agent_name =
+      'ZG_SHADE_PLANNER';
+    languageId: oracle-sql
+  - kind: 2
+    value: "SELECT agent_team_name, status FROM user_ai_agent_teams WHERE
+      agent_team_name = 'ZG_SHADE_TEAM';\r\n"
+    languageId: oracle-sql
+  - kind: 1
+    value: "## 5. MCP Server (no SQL)"
+    languageId: markdown
+  - kind: 1
+    value: |-
+      Enable the MCP Server in the OCI console with the free-form tag:
+
+      ```
+      adb$feature = {"name":"mcp_server","enable":true}
+      ```
+
+      Endpoint: `https://dataaccess.adb.<region-identifier>.oraclecloudapps.com/adb/mcp/v1/databases/<database-ocid>`
+
+      MCP clients sign in with this schema (OAuth) and see `RANK_STOPS_FOR_SHADE`. After changing the tool, drop and re-create it (section 3) and reconnect the clients.
+    languageId: markdown
+  - kind: 2
+    value: >
+      -- If needed, remove everything
+
+      -- BEGIN
+
+      --   DBMS_CLOUD_AI_AGENT.DROP_TEAM(team_name => 'ZG_SHADE_TEAM', force =>
+      TRUE);
+
+      --   DBMS_CLOUD_AI_AGENT.DROP_TASK(task_name => 'ZG_SHADE_TASK', force =>
+      TRUE);
+
+      --   DBMS_CLOUD_AI_AGENT.DROP_AGENT(agent_name => 'ZG_SHADE_PLANNER',
+      force => TRUE);
+
+      --   DBMS_CLOUD_AI_AGENT.DROP_TOOL(tool_name => 'RANK_STOPS_FOR_SHADE',
+      force => TRUE);
+
+      -- END;
+
+      -- /
+
+      -- DROP FUNCTION IF EXISTS rank_stops_for_shade;
+    languageId: oracle-sql

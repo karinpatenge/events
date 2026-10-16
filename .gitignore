@@ -30,6 +30,9 @@
 !/2026/10_HrOUG/scripts/demo2_spatial_dependence.dsnb
 !/2026/10_HrOUG/scripts/demo2_spatial_heterogeneity.dsnb
 !/2026/10_HrOUG/scripts/demo2_spatial_leakage.dsnb
+# Demo 3: AI for Spatial
+!/2026/10_HrOUG/scripts/create_tool_rank_stops_for_shade.sqlnb
+!/2026/10_HrOUG/scripts/run_tool_rank_stops_for_shade.sqlnb
 # Planning docs, stories, slide graphics and icons: never publish
 # (last rules, so no allow-list entry can re-include them)
 /2026/10_HrOUG/documents/
