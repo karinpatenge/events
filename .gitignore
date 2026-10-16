@@ -15,6 +15,7 @@
 /2026/10_HrOUG/*
 !/2026/10_HrOUG/data/*
 !/2026/10_HrOUG/presentations/*
+!/2026/10_HrOUG/recordings/*
 /2026/10_HrOUG/scripts/*
 # Tram 6 (stops A-D, track)
 !/2026/10_HrOUG/scripts/create_table_tram_stations.sql
@@ -35,7 +36,5 @@
 # Planning docs, stories, slide graphics and icons: never publish
 # (last rules, so no allow-list entry can re-include them)
 /2026/10_HrOUG/documents/*
-/2026/10_HrOUG/media/*
-!/2026/10_HrOUG/media/demo2_spatial_dependence_recording.*
-!/2026/10_HrOUG/media/demo2_spatial_heterogeneity_recording.*
-!/2026/10_HrOUG/media/demo2_spatial_leakage_recording.*
+/2026/10_HrOUG/images/*
+/2026/11_DOAG/*
