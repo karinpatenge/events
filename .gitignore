@@ -13,9 +13,8 @@
 # 2026/10_HrOUG (HrOUG 2026, Spatial Meets AI): publish only what attendees need to run the demos.
 # Everything else in the folder stays local (planning docs, slide graphics, generated data, internal scripts).
 /2026/10_HrOUG/*
-!/2026/10_HrOUG/scripts/
-!/2026/10_HrOUG/data/
-!/2026/10_HrOUG/presentations/
+!/2026/10_HrOUG/data/*
+!/2026/10_HrOUG/presentations/*
 /2026/10_HrOUG/scripts/*
 # Tram 6 (stops A-D, track)
 !/2026/10_HrOUG/scripts/create_table_tram_stations.sql
@@ -35,5 +34,8 @@
 !/2026/10_HrOUG/scripts/run_tool_rank_stops_for_shade.sqlnb
 # Planning docs, stories, slide graphics and icons: never publish
 # (last rules, so no allow-list entry can re-include them)
-/2026/10_HrOUG/documents/
-/2026/10_HrOUG/media/
+/2026/10_HrOUG/documents/*
+/2026/10_HrOUG/media/*
+!/2026/10_HrOUG/media/demo2_spatial_dependence_recording.*
+!/2026/10_HrOUG/media/demo2_spatial_heterogeneity_recording.*
+!/2026/10_HrOUG/media/demo2_spatial_leakage_recording.*
