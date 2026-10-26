@@ -37,10 +37,7 @@ CREATE PROPERTY GRAPH IF NOT EXISTS lanl_ground_truth_graph
       LABEL user_domain PROPERTIES ARE ALL COLUMNS,
     computer
       KEY ( computer )
-      LABEL computer PROPERTIES ARE ALL COLUMNS,
-    process AS process
-      KEY ( process )
-      LABEL process PROPERTIES ARE ALL COLUMNS
+      LABEL computer PROPERTIES ARE ALL COLUMNS
   )
   EDGE TABLES (
     redteam AS redteam_user_authenticated_computer
