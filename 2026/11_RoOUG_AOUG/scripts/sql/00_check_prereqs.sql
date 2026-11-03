@@ -2,7 +2,7 @@
 -- 00_check_prereqs.sql
 --
 -- Author:      Karin Patenge
--- Last update: 2026-10-30
+-- Last update: 2026-11-03
 --
 -- Run as the demo user (OGBEMEA2026) in Oracle Autonomous AI Database 26ai.
 -- Checks database version, graph packages and privileges before installing.
@@ -55,7 +55,7 @@ BEGIN
                    || 'MATCH (a) COLUMNS (a.c AS c))' INTO l_n;
     DBMS_OUTPUT.PUT_LINE('DBMS_OGA OK, vertices with component: ' || l_n);
   EXCEPTION WHEN OTHERS THEN
-    DBMS_OUTPUT.PUT_LINE('DBMS_OGA NOT AVAILABLE: ' || SQLERRM || ' -> use the SQL/PGQ fallbacks in demo_act3_graph_algorithms.sql');
+    DBMS_OUTPUT.PUT_LINE('DBMS_OGA NOT AVAILABLE: ' || SQLERRM || ' -> graph algorithms (PageRank, WCC) not available; SQL/PGQ pattern queries still work');
   END;
   cleanup;
 EXCEPTION WHEN OTHERS THEN
