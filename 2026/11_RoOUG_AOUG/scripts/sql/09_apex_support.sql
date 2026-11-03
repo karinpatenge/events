@@ -2,12 +2,12 @@
 -- 09_apex_support.sql
 --
 -- Author:      Karin Patenge
--- Last update: 2026-10-29
+-- Last update: 2026-11-03
 --
 -- Views and small procedures used by the APEX application "Heat Network Ops".
 -- Region queries for the Graph Visualization plug-in are in scripts/apex/BUILD.md.
 -- DH_ANALYSIS_V (at the end) is the curated view for the optional Data Analysis
--- Agent of the Private Agent Factory (scripts/agent/heat_network_ops_agent.md).
+-- Agent of the Private Agent Factory (scripts/README.md, section 8.4).
 -- =============================================================================
 
 -- Colours for the Map Region and cards, the same as in the graph styles
