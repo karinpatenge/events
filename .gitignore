@@ -38,3 +38,6 @@
 /2026/10_HrOUG/documents/*
 /2026/10_HrOUG/images/*
 /2026/11_DOAG/*
+2026/11_RoOUG_AOUG/scripts/sql/demo_prep.sqlnb
+2026/11_RoOUG_AOUG/scripts/.env_iot
+2026/11_RoOUG_AOUG/scripts/.env_paf.txt
