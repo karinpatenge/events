@@ -27,6 +27,9 @@ __pycache__/
 scripts/apex/emea-community-tour-2026-from-iot-data-to-intelligent-action/workspace-components/credentials/credentials-for-oci-genai.apx
 scripts/apex/emea-community-tour-2026-from-iot-data-to-intelligent-action/workspace-components/generative-ai-services/
 
-# Session documents and presentation (demo scripts, setup, structure, slides)
+# Session documents (demo scripts, setup, structure)
 documents/
-presentation/
+
+# Presentation: only the PDF files go into the repository
+presentation/*
+!presentation/*.pdf
