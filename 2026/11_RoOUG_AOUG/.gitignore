@@ -26,3 +26,7 @@ __pycache__/
 # APEXlang export: workspace components with tenancy-specific data (OCI credential, Generative AI service)
 scripts/apex/emea-community-tour-2026-from-iot-data-to-intelligent-action/workspace-components/credentials/credentials-for-oci-genai.apx
 scripts/apex/emea-community-tour-2026-from-iot-data-to-intelligent-action/workspace-components/generative-ai-services/
+
+# Session documents and presentation (demo scripts, setup, structure, slides)
+documents/
+presentation/
