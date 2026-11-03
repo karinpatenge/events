@@ -38,3 +38,9 @@ presentation/*
 media/*
 !media/01_teaser*.mp4
 !media/octemea26*
+
+# Editor settings of the SQL folder
+scripts/sql/.vscode/settings.json
+
+# Demo act scripts
+scripts/sql/demo_act*.sql
