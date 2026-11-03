@@ -1,0 +1,25 @@
+{
+  "displayName": "dh-substation-adapter",
+  "description": "Maps substation JSON payloads to the Substation model",
+  "inboundEnvelope": {
+    "referenceEndpoint": "/dh/telemetry",
+    "envelopeMapping": { "timeObserved": "$.time" },
+    "referencePayload": {
+      "dataFormat": "JSON",
+      "data": { "time": "2026-11-05T07:00:00.000000Z", "t_supply": 106.2, "t_return": 55.1, "t_sec": 68.4, "dp": 1.22, "flow": 58.0 }
+    }
+  },
+  "inboundRoutes": [
+    {
+      "condition": "*",
+      "description": "Substation telemetry",
+      "payloadMapping": {
+        "$.t_supply": "$.t_supply",
+        "$.t_return": "$.t_return",
+        "$.t_sec": "$.t_sec",
+        "$.dp": "$.dp",
+        "$.flow": "$.flow"
+      }
+    }
+  ]
+}

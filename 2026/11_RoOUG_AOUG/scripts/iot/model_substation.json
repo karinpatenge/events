@@ -1,0 +1,18 @@
+{
+  "@context": [
+    "dtmi:dtdl:context;3",
+    "dtmi:dtdl:extension:historization;1",
+    "dtmi:dtdl:extension:quantitativeTypes;1"
+  ],
+  "@id": "dtmi:com:example:districtheating:Substation;1",
+  "@type": "Interface",
+  "displayName": "District heating substation",
+  "description": "Heat exchanger substation between the network and a group of buildings (demo model)",
+  "contents": [
+    { "@type": ["Telemetry", "Historized", "Temperature"], "name": "t_supply", "displayName": "Primary supply temperature", "schema": "double", "unit": "degreeCelsius" },
+    { "@type": ["Telemetry", "Historized", "Temperature"], "name": "t_return", "displayName": "Primary return temperature", "schema": "double", "unit": "degreeCelsius" },
+    { "@type": ["Telemetry", "Historized", "Temperature"], "name": "t_sec", "displayName": "Secondary supply temperature", "schema": "double", "unit": "degreeCelsius" },
+    { "@type": ["Telemetry", "Historized", "Pressure"], "name": "dp", "displayName": "Differential pressure", "schema": "double", "unit": "bar" },
+    { "@type": ["Telemetry", "Historized"], "name": "flow", "displayName": "Flow (m3/h)", "schema": "double" }
+  ]
+}

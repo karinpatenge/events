@@ -1,0 +1,19 @@
+{
+  "@context": [
+    "dtmi:dtdl:context;3",
+    "dtmi:dtdl:extension:historization;1",
+    "dtmi:dtdl:extension:quantitativeTypes;1"
+  ],
+  "@id": "dtmi:com:example:districtheating:PumpStation;1",
+  "@type": "Interface",
+  "displayName": "District heating pump station",
+  "description": "Pump station of a district heating network (demo model)",
+  "contents": [
+    { "@type": ["Telemetry", "Historized"], "name": "vibration", "displayName": "Vibration velocity (mm/s)", "schema": "double" },
+    { "@type": ["Telemetry", "Historized", "Temperature"], "name": "bearing_tmp", "displayName": "Bearing temperature", "schema": "double", "unit": "degreeCelsius" },
+    { "@type": ["Telemetry", "Historized", "Power"], "name": "power", "displayName": "Motor power", "schema": "double", "unit": "kilowatt" },
+    { "@type": ["Telemetry", "Historized"], "name": "flow", "displayName": "Flow (m3/h)", "schema": "double" },
+    { "@type": ["Telemetry", "Historized", "Pressure"], "name": "pressure", "displayName": "Discharge pressure", "schema": "double", "unit": "bar" },
+    { "@type": "Relationship", "name": "feeds", "displayName": "Feeds" }
+  ]
+}
