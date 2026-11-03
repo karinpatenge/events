@@ -1,0 +1,2212 @@
+customAttribute attribute_01 (
+    apexlangName: settings
+    attribute: 1
+    name: Settings
+    scope: app
+    type: textarea
+    appearance {
+        sequence: 10
+    }
+    help {
+        helpText: Settings from template are configured here.
+    }
+)
+
+customAttribute attribute_02 (
+    apexlangName: basestyles
+    attribute: 2
+    name: BaseStyles
+    scope: app
+    type: textarea
+    appearance {
+        sequence: 20
+    }
+    help {
+        helpText: Settings.BaseStyles from template are configured here.
+    }
+)
+
+customAttribute attribute_02 (
+    apexlangName: generalSettings
+    attribute: 2
+    name: General Settings
+    type: textarea
+    appearance {
+        attributeGroup: @advanced
+        sequence: 120
+    }
+    help {
+        helpText: Settings of the graph component like pageSize, legendWidth etc can be provided here.
+    }
+    examples {
+        examples:
+            ```
+            {
+              "legendWidth": 300
+            }
+            
+            {
+                pageSize: 10,
+                groupEdges: true,
+                legendWidth: 200
+              }
+            ```
+    }
+)
+
+customAttribute attribute_04 (
+    apexlangName: layout
+    attribute: 4
+    name: Layout
+    type: selectList
+    appearance {
+        attributeGroup: @layout
+        sequence: 40
+    }
+    help {
+        helpText: This determines how nodes are positioned in the visual structure of the graph.
+    }
+
+    entry circle (
+        sequence: 10
+        display: Circle
+        return: circle
+    )
+
+    entry concentric (
+        sequence: 20
+        display: Concentric
+        return: concentric
+    )
+
+    entry force (
+        sequence: 30
+        display: Force
+        return: force
+    )
+
+    entry geographical (
+        sequence: 70
+        display: Geographical
+        return: geographical
+        help {
+            helpText: Applies geographical layout to graph elements
+        }
+    )
+
+    entry grid (
+        sequence: 40
+        display: Grid
+        return: grid
+    )
+
+    entry hierarchical (
+        sequence: 50
+        display: Hierarchical
+        return: hierarchical
+    )
+
+    entry radial (
+        sequence: 60
+        display: Radial
+        return: radial
+    )
+
+)
+
+customAttribute attribute_05 (
+    apexlangName: groupEdges
+    attribute: 5
+    name: Group Edges
+    type: yesNo
+    appearance {
+        attributeGroup: @appearance
+        sequence: 150
+    }
+    help {
+        helpText: When enabled, multiple edges between the same source and target vertex will be grouped together in the graph. The grouped edges will be shown as a single edge with a number on it, indicating how many edges have been grouped.
+    }
+)
+
+customAttribute attribute_06 (
+    apexlangName: displaySize
+    attribute: 6
+    name: Display Size
+    type: integer
+    appearance {
+        sequence: 60
+    }
+    default {
+        value: 100
+    }
+    help {
+        helpText: Determines how many elements are shown in the graph.
+    }
+)
+
+customAttribute attribute_07 (
+    apexlangName: vertexCaption
+    attribute: 7
+    name: Vertex Caption
+    appearance {
+        attributeGroup: @caption
+        sequence: 151
+    }
+    help {
+        helpText: The property from the graph data that will be shown as a label beside each vertex in the graph.
+    }
+    examples {
+        examples:
+            ```
+            If this attribute is assigned with the value <b>FirstName</b>, and if the graph data has a vertex with {'FirstName': 'Mark', 'LastName', 'Taylor'}, the corresponding vertex's label will read 'Mark' in the graph.<br>
+            Note: There's no need to include additional quotes when specifying the attribute name or values.
+            ```
+    }
+)
+
+customAttribute attribute_08 (
+    apexlangName: edgeCaption
+    attribute: 8
+    name: Edge Caption
+    appearance {
+        attributeGroup: @caption
+        sequence: 152
+    }
+    help {
+        helpText: The property from the graph data that will be shown as a label beside each edge of the graph.
+    }
+    examples {
+        examples:
+            ```
+            If this attribute is assigned with the value <b>Id</b>, and if the graph data has a edge with {'Id': 100}, the corresponding edge's label will read '100' in the graph.<br>
+            Note: There's no need to include additional quotes when specifying the attribute name or values.
+            ```
+    }
+)
+
+customAttribute attribute_09 (
+    apexlangName: maximumCaptionLength
+    attribute: 9
+    name: Maximum Caption Length
+    type: integer
+    appearance {
+        attributeGroup: @caption
+        sequence: 153
+    }
+    help {
+        helpText: Number of characters up to which Vertex and Edge labels will be shown in the graph.
+    }
+)
+
+customAttribute attribute_10 (
+    apexlangName: display
+    attribute: 10
+    name: Display
+    type: checkboxes
+    appearance {
+        attributeGroup: @appearance
+        sequence: 850
+    }
+    default {
+        value: modes:exploration
+    }
+    help {
+        helpText:
+            ```
+            This attribute contains check boxes - 'Modes' and 'Exploration'.
+            'Modes' checkbox when checked, shows the modes toolbar in the graph, that allows functions like 'Move/Zoom', 'Fit to Screen' etc. 
+            'Exploration' checkbox when checked, shows the exploration toolbar in the graph, that allows functions like 'Group', 'Ungroup' etc.
+            ```
+    }
+
+    entry exploration (
+        sequence: 20
+        display: Exploration
+        return: exploration
+    )
+
+    entry modes (
+        sequence: 10
+        display: Modes
+        return: modes
+    )
+
+)
+
+customAttribute attribute_11 (
+    apexlangName: expand
+    attribute: 11
+    name: Expand
+    type: javaScriptCode
+    appearance {
+        attributeGroup: @callbacks
+        sequence: 110
+    }
+    help {
+        helpText: Javascript to expand a node and fetch it's neighbors can be specified here.
+    }
+)
+
+customAttribute attribute_12 (
+    apexlangName: fetchActions
+    attribute: 12
+    name: Fetch Actions
+    type: javaScriptCode
+    appearance {
+        attributeGroup: @callbacks
+        sequence: 120
+    }
+    help {
+        helpText: FetchActions callback function: Javascript that retrieves the saved state of the graph can be provided here.
+    }
+    examples {
+        examples:
+            ```
+            Javascript:
+            const actions = await apex.server.process('Fetch',null, {dataType: 'text'});
+                try {
+                    return JSON.parse(actions);
+                } catch (error) {
+                    return [];
+                }
+            
+            
+            AJAX callback - 'Fetch' defined in the APEX processes tab:
+            DECLARE
+                data clob;
+            BEGIN
+                SELECT JSON_ARRAYAGG(action FORMAT JSON ORDER BY ID ASC returning clob) INTO data FROM EBA_GRAPHVIZ_GRAPH_ACTION WHERE USER_ID = v('APP_USER');
+                htp.p(data);
+            END;
+            ```
+    }
+)
+
+customAttribute attribute_13 (
+    apexlangName: persist
+    attribute: 13
+    name: Persist
+    type: javaScriptCode
+    appearance {
+        attributeGroup: @callbacks
+        sequence: 130
+    }
+    help {
+        helpText: Javascript that persists the saved state of the graph can be provided here.
+    }
+    examples {
+        examples:
+            ```
+            Javascript:
+            
+                await apex.server.process('Persist', {
+                    x01: JSON.stringify(action)
+                }, {dataType: 'text'});
+            
+            
+            AJAX callback - 'Fetch' defined in the APEX processes tab:
+            
+            INSERT INTO EBA_GRAPHVIZ_GRAPH_ACTION(ACTION, USER_ID) VALUES(apex_application.g_x01, v('APP_USER'));
+            ```
+    }
+)
+
+customAttribute attribute_14 (
+    apexlangName: showDisplaySizeControl
+    attribute: 14
+    name: Show Display Size Control
+    type: yesNo
+    appearance {
+        attributeGroup: @appearance
+        sequence: 50
+    }
+    default {
+        value: true
+    }
+    help {
+        helpText: Show Display Size Control.
+    }
+)
+
+customAttribute attribute_15 (
+    apexlangName: updateGraphData
+    attribute: 15
+    name: Update Graph Data
+    type: javaScriptCode
+    appearance {
+        attributeGroup: @callbacks
+        sequence: 150
+    }
+    help {
+        helpText: UpdateGraphData callback function: Javascript to update the graph data (vertices/edges) of the original graph.
+    }
+)
+
+customAttribute attribute_16 (
+    apexlangName: height2
+    attribute: 16
+    name: Height
+    type: integer
+    appearance {
+        attributeGroup: @appearance
+        sequence: 9
+    }
+    builder {
+        unit: px
+    }
+    default {
+        value: 400
+    }
+    help {
+        helpText: Height of plugin window. Default is 400.
+    }
+)
+
+customAttribute attribute_17 (
+    apexlangName: updateRuleBasedStyle
+    attribute: 93
+    name: Update Rule based Style
+    type: javaScriptCode
+    appearance {
+        attributeGroup: @callbacks
+        sequence: 930
+    }
+    help {
+        helpText: Provide the Javascript to update the rule based style, passed via the style parameter here.
+    }
+)
+
+customAttribute background_color (
+    apexlangName: backgroundColor
+    attribute: 83
+    name: Background Color
+    type: color
+    appearance {
+        attributeGroup: @appearance
+        sequence: 830
+    }
+    dependingOn {
+        attribute: @custom_theme/component
+        conditionType: =
+        value: Y
+    }
+)
+
+customAttribute basestyles (
+    apexlangName: baseStyles
+    attribute: 87
+    name: Base Styles
+    type: textarea
+    appearance {
+        attributeGroup: @advanced
+        sequence: 870
+    }
+    help {
+        helpText: Styles are applied to all vertices and/or edges unless otherwise indicated in Rule Based Styles.
+    }
+    examples {
+        examples:
+            ```
+            {
+              "vertex": {
+                "label": {
+                  "text": "${properties.name}"
+                }
+              }
+            }
+            ```
+    }
+)
+
+customAttribute bind_variable_pgql (
+    apexlangName: bindVariableForPageStartPageSizePgq
+    attribute: 98
+    name: Bind Variable for page_start, page_size  (PGQL Only)
+    type: yesNo
+    appearance {
+        sequence: 980
+    }
+    help {
+        helpText:
+            ```
+            Enable binding variables for page_start and page_size.
+            Add the following bind variable names to your query:
+            page_start, 
+            page_size
+            ```
+    }
+    examples {
+        examples: SELECT ORA_PGQL_TO_JSON('PQGL QUERY', :PAGE_START, :PAGE_SIZE) AS J FROM SYS.DUAL;
+    }
+)
+
+customAttribute custom_theme (
+    apexlangName: customTheme
+    attribute: 82
+    name: Custom Theme
+    type: yesNo
+    appearance {
+        attributeGroup: @appearance
+        sequence: 820
+    }
+    help {
+        helpText: Customize background and text color.
+    }
+)
+
+customAttribute darktheme (
+    apexlangName: darkTheme
+    attribute: 81
+    name: Dark Theme
+    type: yesNo
+    appearance {
+        attributeGroup: @appearance
+        sequence: 810
+    }
+)
+
+customAttribute default_legend_enabled (
+    apexlangName: enableDefaultLegend
+    attribute: 106
+    name: Enable Default Legend
+    type: yesNo
+    appearance {
+        attributeGroup: @legend
+        sequence: 10
+    }
+    default {
+        value: true
+    }
+    help {
+        helpText: Enables autogenerated legend entries based on graph data. Defaults to true. Set to false to rely solely on ruleBasedStyles for legend entries.
+    }
+)
+
+customAttribute defaults_for_modes (
+    apexlangName: defaultValuesForModes
+    attribute: 94
+    name: Default Values for Modes
+    type: checkboxes
+    appearance {
+        attributeGroup: @appearance
+        sequence: 849
+    }
+    default {
+        value: interactionActive:fitToScreenActive:stickyActive:evolutionActive
+    }
+    help {
+        helpText: Specifies the default state of mode options(Select - Move/Zoom, Fit to Screen, Sticky mode, Evolution).
+    }
+
+    entry enableEvolutionSetting (
+        sequence: 40
+        display: Enable Evolution Setting
+        return: evolutionActive
+        help {
+            helpText: Specifies the default state of the 'Evolution' toggle button in the toolbar. True activates the button and false deactivates it.
+        }
+    )
+
+    entry enableFitToScreen (
+        sequence: 20
+        display: Enable Fit to Screen
+        return: fitToScreenActive
+        help {
+            helpText: Specifies the default state of the 'Fit to Screen' toggle button in the toolbar. True activates the button and false deactivates it.
+        }
+    )
+
+    entry enableInteraction (
+        sequence: 10
+        display: Enable Interaction
+        return: interactionActive
+        help {
+            helpText: Specifies the default state of the 'Select - Move/Zoom' toggle button in the toolbar. True activates 'Select' mode and false switches to 'Move/Zoom' mode.
+        }
+    )
+
+    entry enableStickyMode (
+        sequence: 30
+        display: Enable Sticky Mode
+        return: stickyActive
+        help {
+            helpText: Specifies the default state of the 'Sticky mode' toggle button in the toolbar. True activates the button and false deactivates it.
+        }
+    )
+
+)
+
+customAttribute edgemarker (
+    apexlangName: edgeMarker
+    attribute: 76
+    name: Edge Marker
+    type: selectList
+    appearance {
+        attributeGroup: @appearance
+        sequence: 760
+    }
+
+    entry arrow (
+        sequence: 10
+        display: Arrow
+        return: arrow
+    )
+
+    entry none (
+        sequence: 20
+        display: None
+        return: none
+    )
+
+)
+
+customAttribute enable_evolution (
+    apexlangName: enableEvolution
+    attribute: 77
+    name: Enable Evolution
+    type: yesNo
+    appearance {
+        attributeGroup: @evolution
+        sequence: 609
+    }
+)
+
+customAttribute enable_expand (
+    apexlangName: enableExpand
+    attribute: 101
+    name: Enable Expand
+    type: yesNo
+    appearance {
+        attributeGroup: @expand
+        sequence: 999
+    }
+)
+
+customAttribute escapehtml (
+    apexlangName: escapeHtmlInTooltip
+    attribute: 79
+    name: Escape HTML in Tooltip
+    type: yesNo
+    appearance {
+        attributeGroup: @appearance
+        sequence: 790
+    }
+    help {
+        helpText: Escapes HTML content used on vertex/edge tooltip
+    }
+)
+
+customAttribute evolution (
+    apexlangName: evolutionSettings
+    attribute: 90
+    name: Evolution Settings
+    type: textarea
+    appearance {
+        attributeGroup: @advanced
+        sequence: 900
+    }
+    help {
+        helpText: Network Evolution configuration
+    }
+    examples {
+        examples:
+            ```
+            {
+              "unit": "day",
+              "vertex": {
+                "start": "date",
+                "labelFormat": "YYYY-MM"
+              }
+            }
+            ```
+    }
+)
+
+customAttribute evolution_axis (
+    apexlangName: axis
+    attribute: 74
+    name: Axis
+    type: selectList
+    appearance {
+        attributeGroup: @evolution
+        sequence: 740
+    }
+    dependingOn {
+        attribute: @enable_evolution/component
+        conditionType: =
+        value: Y
+    }
+
+    entry both (
+        sequence: 30
+        display: Both
+        return: both
+    )
+
+    entry edges (
+        sequence: 20
+        display: Edges
+        return: edges
+    )
+
+    entry vertices (
+        sequence: 10
+        display: Vertices
+        return: vertices
+    )
+
+)
+
+customAttribute evolution_chart (
+    apexlangName: chart
+    attribute: 62
+    name: Chart
+    type: selectList
+    appearance {
+        attributeGroup: @evolution
+        sequence: 620
+    }
+    dependingOn {
+        attribute: @enable_evolution/component
+        conditionType: =
+        value: Y
+    }
+    help {
+        helpText: Type of the chart (default 'bar')
+    }
+
+    entry bar (
+        sequence: 10
+        display: bar
+        return: bar
+    )
+
+    entry line (
+        sequence: 20
+        display: line
+        return: line
+    )
+
+)
+
+customAttribute evolution_edge_end (
+    apexlangName: edgeEndProperty
+    attribute: 68
+    name: Edge End Property
+    appearance {
+        attributeGroup: @evolution
+        sequence: 680
+    }
+    dependingOn {
+        attribute: @enable_evolution/component
+        conditionType: =
+        value: Y
+    }
+)
+
+customAttribute evolution_edge_start (
+    apexlangName: edgeStartProperty
+    attribute: 67
+    name: Edge Start Property
+    appearance {
+        attributeGroup: @evolution
+        sequence: 670
+    }
+    dependingOn {
+        attribute: @enable_evolution/component
+        conditionType: =
+        value: Y
+    }
+    help {
+        helpText: Edge Evolution properties (or just string specifying Start property)
+    }
+)
+
+customAttribute evolution_exclude_show (
+    apexlangName: showExcludedValues
+    attribute: 70
+    name: Show Excluded Values
+    type: yesNo
+    appearance {
+        attributeGroup: @evolution
+        sequence: 700
+    }
+    dependingOn {
+        attribute: @enable_evolution/component
+        conditionType: =
+        value: Y
+    }
+    help {
+        helpText: Whether to always show or hide excluded values (default false)
+    }
+)
+
+customAttribute evolution_exclude_values (
+    apexlangName: excludeValues
+    attribute: 69
+    name: Exclude Values
+    appearance {
+        attributeGroup: @evolution
+        sequence: 690
+    }
+    dependingOn {
+        attribute: @enable_evolution/component
+        conditionType: =
+        value: Y
+    }
+    help {
+        helpText: Defines exclusion of values
+    }
+    examples {
+        examples: "Array of excluded values: (string | number)[]"
+    }
+)
+
+customAttribute evolution_granularity (
+    apexlangName: granularity
+    attribute: 63
+    name: Granularity
+    type: number
+    appearance {
+        attributeGroup: @evolution
+        sequence: 630
+    }
+    dependingOn {
+        attribute: @enable_evolution/component
+        conditionType: =
+        value: Y
+    }
+    help {
+        helpText: Aggregation granularity in given unit (default 1)
+    }
+)
+
+customAttribute evolution_height (
+    apexlangName: height
+    attribute: 61
+    name: Height
+    type: number
+    appearance {
+        attributeGroup: @evolution
+        sequence: 610
+    }
+    dependingOn {
+        attribute: @enable_evolution/component
+        conditionType: =
+        value: Y
+    }
+    help {
+        helpText: Height of the UI component (default 100)
+    }
+)
+
+customAttribute evolution_labelformat (
+    apexlangName: labelFormat
+    attribute: 75
+    name: Label Format
+    appearance {
+        attributeGroup: @evolution
+        sequence: 750
+    }
+    dependingOn {
+        attribute: @enable_evolution/component
+        conditionType: =
+        value: Y
+    }
+    help {
+        helpText:
+            ```
+            A string that represents the format in which the date must be displayed,
+              the format must include either YYYY, MM, or DD to work, otherwise, it will be ignored.
+               If not provided, the following defaults apply:
+               when displaying units of days, only the day will be displayed (1, 15, 30, etc)
+               when displaying months only the tag of the month will be displayed (Jan, Feb, etc)
+               when displaying years, only the year will be displayed (2001, 1999, etc).
+               If the time window between the first date in the graph and the last date
+               in the graph is too big, such that the displayed time label wouldn't fit, it will
+               change to the next bigger unit. For example, if days are being used, but the labels don't fit,
+               it would try using a month label, if a month label would be too big, a year label would be used
+            ```
+    }
+)
+
+customAttribute evolution_playback_step (
+    apexlangName: playbackStep
+    attribute: 71
+    name: Playback Step
+    type: number
+    appearance {
+        attributeGroup: @evolution
+        sequence: 710
+    }
+    dependingOn {
+        attribute: @enable_evolution/component
+        conditionType: =
+        value: Y
+    }
+    help {
+        helpText: Number of vertex / edge changes per step
+    }
+)
+
+customAttribute evolution_playback_timeout (
+    apexlangName: playbackTimeout
+    attribute: 72
+    name: Playback Timeout
+    type: number
+    appearance {
+        attributeGroup: @evolution
+        sequence: 720
+    }
+    dependingOn {
+        attribute: @enable_evolution/component
+        conditionType: =
+        value: Y
+    }
+    help {
+        helpText: Number of milliseconds between steps
+    }
+)
+
+customAttribute evolution_preservepositions (
+    apexlangName: preservePositions
+    attribute: 73
+    name: Preserve Positions
+    type: yesNo
+    appearance {
+        attributeGroup: @evolution
+        sequence: 730
+    }
+    dependingOn {
+        attribute: @enable_evolution/component
+        conditionType: =
+        value: Y
+    }
+    help {
+        helpText:
+            ```
+            When turned on, network evolution will keep the original vertex positions of the graph <br>
+            when vertices and edges unfold during playback
+            ```
+    }
+)
+
+customAttribute evolution_unit (
+    apexlangName: unit
+    attribute: 64
+    name: Unit
+    type: selectList
+    appearance {
+        attributeGroup: @evolution
+        sequence: 640
+    }
+    dependingOn {
+        attribute: @enable_evolution/component
+        conditionType: =
+        value: Y
+    }
+    help {
+        helpText: Time unit or undefined for numbers (default undefined)
+    }
+
+    entry day (
+        sequence: 40
+        display: day
+        return: day
+    )
+
+    entry hour (
+        sequence: 30
+        display: hour
+        return: hour
+    )
+
+    entry minute (
+        sequence: 20
+        display: minute
+        return: minute
+    )
+
+    entry month (
+        sequence: 60
+        display: month
+        return: month
+    )
+
+    entry second (
+        sequence: 10
+        display: second
+        return: second
+    )
+
+    entry week (
+        sequence: 50
+        display: week
+        return: week
+    )
+
+    entry year (
+        sequence: 70
+        display: year
+        return: year
+    )
+
+)
+
+customAttribute evolution_vertex_end (
+    apexlangName: vertexEndProperty
+    attribute: 66
+    name: Vertex End Property
+    appearance {
+        attributeGroup: @evolution
+        sequence: 660
+    }
+    dependingOn {
+        attribute: @enable_evolution/component
+        conditionType: =
+        value: Y
+    }
+)
+
+customAttribute evolution_vertex_start (
+    apexlangName: vertexEvolutionStartProperty
+    attribute: 65
+    name: Vertex Evolution Start Property
+    appearance {
+        attributeGroup: @evolution
+        sequence: 650
+    }
+    dependingOn {
+        attribute: @enable_evolution/component
+        conditionType: =
+        value: Y
+    }
+    help {
+        helpText: Vertex Evolution properties (or just string specifying Start property)
+    }
+)
+
+customAttribute expand_direction (
+    apexlangName: expandDirection
+    attribute: 103
+    name: Expand Direction
+    type: selectList
+    validation {
+        required: true
+    }
+    appearance {
+        attributeGroup: @expand
+        sequence: 1010
+    }
+    default {
+        value: outbound
+    }
+    dependingOn {
+        attribute: @enable_expand/component
+        conditionType: =
+        value: Y
+    }
+    help {
+        helpText: Specify the direction of the edges to be traversed when expanding to neighboring vertices.
+    }
+
+    entry inbound (
+        sequence: 20
+        display: Inbound
+        return: inbound
+        help {
+            helpText: Traverse edges pointing towards the specified vertex.
+        }
+    )
+
+    entry outbound (
+        sequence: 10
+        display: Outbound
+        return: outbound
+        help {
+            helpText: Traverse edges pointing away from the specified vertex.
+        }
+    )
+
+)
+
+customAttribute exploration_options (
+    apexlangName: explorationOptions
+    attribute: 86
+    name: Exploration Options
+    type: checkboxes
+    appearance {
+        attributeGroup: @appearance
+        sequence: 870
+    }
+    default {
+        value: expand:focus:group:ungroup:drop:undo:redo:reset
+    }
+    dependingOn {
+        attribute: @attribute_10/component
+        conditionType: inList
+        list: exploration
+    }
+
+    entry drop (
+        sequence: 50
+        display: Drop
+        return: drop
+    )
+
+    entry expand (
+        sequence: 10
+        display: Expand
+        return: expand
+    )
+
+    entry focus (
+        sequence: 20
+        display: Focus
+        return: focus
+    )
+
+    entry group (
+        sequence: 30
+        display: Group
+        return: group
+    )
+
+    entry redo (
+        sequence: 70
+        display: Redo
+        return: redo
+    )
+
+    entry reset (
+        sequence: 80
+        display: Reset
+        return: reset
+    )
+
+    entry undo (
+        sequence: 60
+        display: Undo
+        return: undo
+    )
+
+    entry ungroup (
+        sequence: 40
+        display: Ungroup
+        return: ungroup
+    )
+
+)
+
+customAttribute force_alphadecay (
+    apexlangName: alphaDecay
+    attribute: 20
+    name: Alpha Decay
+    type: number
+    appearance {
+        attributeGroup: @layout
+        sequence: 42
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: =
+        value: force
+    }
+    help {
+        helpText: alphaDecay controls the rate at which the simulation's internal alpha value, which influences node movement, decreases over time, gradually stabilizing the force layout. Default is 0.01.
+    }
+)
+
+customAttribute force_clusterby (
+    apexlangName: clusterBy
+    attribute: 25
+    name: Cluster By
+    appearance {
+        attributeGroup: @layout
+        sequence: 47
+    }
+    dependingOn {
+        attribute: @force_clusterenabled/component
+        conditionType: =
+        value: Y
+    }
+    help {
+        helpText: By default, the cluster layout uses the first element in `vertex.labels` to form the cluster. `clusterBy` can be set to the property name of a vertex, and the clusters will be formed based on the property value.
+    }
+)
+
+customAttribute force_clusterenabled (
+    apexlangName: enableCluster
+    attribute: 24
+    name: Enable Cluster
+    type: yesNo
+    appearance {
+        attributeGroup: @layout
+        sequence: 46
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: =
+        value: force
+    }
+    help {
+        helpText: clusterEnabled: Decides if cluster based layout is enabled.
+    }
+)
+
+customAttribute force_edgedistance (
+    apexlangName: edgeDistance
+    attribute: 22
+    name: Edge Distance
+    type: number
+    appearance {
+        attributeGroup: @layout
+        sequence: 44
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: =
+        value: force
+    }
+    help {
+        helpText: edgeDistance: The simulation tries to set every edge to the specified length. This can affect the padding between vertices. Default is 100.
+    }
+)
+
+customAttribute force_hideunclusteredvertices (
+    apexlangName: hideUnclusteredVertices
+    attribute: 26
+    name: Hide Unclustered Vertices
+    type: yesNo
+    appearance {
+        attributeGroup: @layout
+        sequence: 48
+    }
+    dependingOn {
+        attribute: @force_clusterenabled/component
+        conditionType: =
+        value: Y
+    }
+    help {
+        helpText: Decides whether to display vertices that do not belong to any cluster. Default is false.
+    }
+)
+
+customAttribute force_velocitydecay (
+    apexlangName: velocityDecay
+    attribute: 21
+    name: Velocity Decay
+    type: number
+    appearance {
+        attributeGroup: @layout
+        sequence: 43
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: =
+        value: force
+    }
+    help {
+        helpText: velocityDecay: Decides how fast a simulation ends. Default is 0.1.
+    }
+)
+
+customAttribute force_vertexcharge (
+    apexlangName: vertexCharge
+    attribute: 23
+    name: Vertex Charge
+    type: number
+    appearance {
+        attributeGroup: @layout
+        sequence: 45
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: =
+        value: force
+    }
+    help {
+        helpText: vertexCharge: Influences the underlying forces (e.g. to remain within the viewport, to push vertices away from each other). If `clusterEnabled` is true, it influences the forces among clusters. Default is -60.
+    }
+)
+
+customAttribute geo_appid (
+    apexlangName: appId
+    attribute: 49
+    name: App ID
+    appearance {
+        attributeGroup: @layout
+        sequence: 44
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: =
+        value: geographical
+    }
+    help {
+        helpText:
+            ```
+            Accepts app id used to fetch maps from http://maps.oracle.com/elocation. When value isn't provided, a generic
+              appId will be used.
+            ```
+    }
+)
+
+customAttribute geo_latitude (
+    apexlangName: latitude
+    attribute: 48
+    name: Latitude
+    appearance {
+        attributeGroup: @layout
+        sequence: 43
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: =
+        value: geographical
+    }
+    help {
+        helpText: The vertex property to use for determining the latitude of a vertex.
+    }
+)
+
+customAttribute geo_layers (
+    apexlangName: layers
+    attribute: 54
+    name: Layers
+    type: textarea
+    appearance {
+        attributeGroup: @layout
+        sequence: 50
+    }
+    dependingOn {
+        attribute: @geo_maptype/component
+        conditionType: =
+        value: custom_type
+    }
+    help {
+        helpText: Provide layers in array of JSON elements format which you want to display on map.
+    }
+    examples {
+        examples:
+            ```
+            <pre>
+            [{
+               "id": "elocation-tiles",
+               "type": "raster",
+               "source": "oracle-elocation"
+            }]
+            </pre>
+            ```
+    }
+)
+
+customAttribute geo_longitude (
+    apexlangName: longitude
+    attribute: 47
+    name: Longitude
+    appearance {
+        attributeGroup: @layout
+        sequence: 42
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: =
+        value: geographical
+    }
+    help {
+        helpText: The vertex property to use for determining the longitude of a vertex
+    }
+)
+
+customAttribute geo_maptype (
+    apexlangName: mapType
+    attribute: 56
+    name: Map Type
+    type: selectList
+    appearance {
+        attributeGroup: @layout
+        sequence: 41
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: =
+        value: geographical
+    }
+    help {
+        helpText:
+            ```
+            You can select map type in map visualization or graph visualization settings or provide your own sources
+              and layers.
+            ```
+    }
+
+    entry brightStreetsMap (
+        sequence: 20
+        display: Bright Streets Map
+        return: osm_bright
+    )
+
+    entry customType (
+        sequence: 50
+        display: Custom Type
+        return: custom_type
+    )
+
+    entry darkMap (
+        sequence: 30
+        display: Dark  Map
+        return: osm_darkmatter
+    )
+
+    entry positronMap (
+        sequence: 10
+        display: Positron Map
+        return: osm_positron
+    )
+
+    entry worldMap (
+        sequence: 40
+        display: World Map
+        return: world_map_mb
+    )
+
+)
+
+customAttribute geo_markers (
+    apexlangName: markers
+    attribute: 57
+    name: Markers
+    type: textarea
+    appearance {
+        attributeGroup: @layout
+        sequence: 51
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: =
+        value: geographical
+    }
+)
+
+customAttribute geo_showinfo (
+    apexlangName: showInformation
+    attribute: 51
+    name: Show Information
+    type: yesNo
+    appearance {
+        attributeGroup: @layout
+        sequence: 47
+    }
+    default {
+        value: true
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: =
+        value: geographical
+    }
+    help {
+        helpText:
+            ```
+            Displays an info box in the visualizer that shows the 'Latitude' and 'Longitude' of the
+              mouse position and the 'Zoom Level' of the map.
+            ```
+    }
+)
+
+customAttribute geo_shownavigation (
+    apexlangName: navigation
+    attribute: 52
+    name: Navigation
+    type: yesNo
+    appearance {
+        attributeGroup: @layout
+        sequence: 48
+    }
+    default {
+        value: true
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: =
+        value: geographical
+    }
+    help {
+        helpText: Shows the navigation controls towards the top right region of the map.
+    }
+)
+
+customAttribute geo_sources (
+    apexlangName: sources
+    attribute: 53
+    name: Sources
+    type: textarea
+    appearance {
+        attributeGroup: @layout
+        sequence: 49
+    }
+    dependingOn {
+        attribute: @geo_maptype/component
+        conditionType: =
+        value: custom_type
+    }
+    help {
+        helpText:
+            ```
+            Provide your own sources in JSON format which will be used in map. Note: attribute property can be
+                    only added only as separate part from visualization because of security issues.
+            ```
+    }
+    examples {
+        examples:
+            ```
+            <pre>
+            { "oracle-elocation":
+              {
+                "type": "raster", 
+                "tiles": ["https://elocation.oracle.com/mapviewer/mcserver/ELOCATION_MERCATOR/world_map_mb/{z}/{y}/{x}.png"], 
+                "tileSize": 256, 
+                "minzoom": 0, 
+                "maxzoom": 18 
+              } 
+            } 
+            </pre>
+            ```
+    }
+)
+
+customAttribute grid_columns (
+    apexlangName: columns
+    attribute: 28
+    name: Columns
+    type: integer
+    appearance {
+        attributeGroup: @layout
+        sequence: 49
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: =
+        value: grid
+    }
+)
+
+customAttribute grid_rows (
+    apexlangName: rows
+    attribute: 27
+    name: Rows
+    type: integer
+    appearance {
+        attributeGroup: @layout
+        sequence: 48
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: =
+        value: grid
+    }
+)
+
+customAttribute hierarchical_edgeseparation (
+    apexlangName: edgeSeparation
+    attribute: 45
+    name: Edge Separation
+    type: number
+    appearance {
+        attributeGroup: @layout
+        sequence: 45
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: =
+        value: hierarchical
+    }
+    help {
+        helpText: Sets the horizontal separation between the edges.
+    }
+)
+
+customAttribute hierarchical_rankdirection (
+    apexlangName: rankDirection
+    attribute: 29
+    name: Rank Direction
+    type: selectList
+    appearance {
+        attributeGroup: @layout
+        sequence: 42
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: =
+        value: hierarchical
+    }
+    help {
+        helpText: Alignment of the ranked vertices.
+    }
+
+    entry bottomToTop (
+        sequence: 6
+        display: Bottom to Top
+        return: BT
+    )
+
+    entry downToLeft (
+        sequence: 3
+        display: Down to Left
+        return: DL
+    )
+
+    entry downToRight (
+        sequence: 4
+        display: Down to Right
+        return: DR
+    )
+
+    entry leftToRight (
+        sequence: 7
+        display: Left to Right
+        return: LR
+    )
+
+    entry rightToLeft (
+        sequence: 8
+        display: Right to Left
+        return: RL
+    )
+
+    entry topToBottom (
+        sequence: 5
+        display: Top to Bottom
+        return: TB
+    )
+
+    entry upToLeft (
+        sequence: 1
+        display: Up to Left
+        return: UL
+    )
+
+    entry upToRight (
+        sequence: 2
+        display: Up to Right
+        return: UR
+    )
+
+)
+
+customAttribute hierarchical_ranker (
+    apexlangName: ranker
+    attribute: 30
+    name: Ranker
+    type: selectList
+    appearance {
+        attributeGroup: @layout
+        sequence: 43
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: =
+        value: hierarchical
+    }
+    help {
+        helpText: Specifies the type of algorithm used to rank the vertices.
+    }
+
+    entry longestPath (
+        sequence: 30
+        display: Longest Path
+        return: longest-path
+        help {
+            helpText:
+                ```
+                Vertices are pushed to the lowest layer possible, leaving the bottom ranks wide and leaving edges
+                    longer than necessary.
+                ```
+        }
+    )
+
+    entry networkSimplex (
+        sequence: 10
+        display: Network Simplex
+        return: network-simplex
+        help {
+            helpText: The network simplex algorithm assigns ranks to each vertex in the input graph and iteratively
+        }
+    )
+
+    entry tightTree (
+        sequence: 20
+        display: Tight Tree
+        return: tight-tree
+        help {
+            helpText:
+                ```
+                Constructs a spanning tree with tight edges and adjust the ranks of the input vertex to achieve
+                    this. A tight edge is one that is has a length that matches its `minlen` attribute.
+                ```
+        }
+    )
+
+)
+
+customAttribute hierarchical_rankseparation (
+    apexlangName: rankSeparation
+    attribute: 46
+    name: Rank Separation
+    type: number
+    appearance {
+        attributeGroup: @layout
+        sequence: 46
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: =
+        value: hierarchical
+    }
+    help {
+        helpText: Sets the separation between two ranks(levels) in the graph.
+    }
+)
+
+customAttribute hierarchical_vertexseparation (
+    apexlangName: vertexSeparation
+    attribute: 31
+    name: Vertex Separation
+    type: number
+    appearance {
+        attributeGroup: @layout
+        sequence: 44
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: =
+        value: hierarchical
+    }
+    help {
+        helpText: Sets the horizontal separation between the vertices.
+    }
+)
+
+customAttribute legend_state (
+    apexlangName: legendState
+    attribute: 105
+    name: Legend State
+    type: selectList
+    validation {
+        required: true
+    }
+    appearance {
+        attributeGroup: @legend
+        sequence: 20
+    }
+    default {
+        value: expanded
+    }
+    help {
+        helpText: Specifies whether the graph views' legend region is in expanded or collapsed state.
+    }
+
+    entry collapsed (
+        sequence: 20
+        display: Collapsed
+        return: collapsed
+        help {
+            helpText: Specifies that the legend region is in collapsed state on load
+        }
+    )
+
+    entry expanded (
+        sequence: 10
+        display: Expanded
+        return: expanded
+        help {
+            helpText: Specifies that the legend region is in expanded state on load
+        }
+    )
+
+)
+
+customAttribute legendwidth (
+    apexlangName: legendWidth
+    attribute: 18
+    name: Legend Width
+    type: integer
+    appearance {
+        attributeGroup: @legend
+        sequence: 40
+    }
+)
+
+customAttribute livesearch (
+    apexlangName: liveSearch
+    attribute: 17
+    name: Live Search
+    type: yesNo
+    appearance {
+        sequence: 150
+    }
+    help {
+        helpText: Enable search box
+    }
+)
+
+customAttribute max_number_of_hops (
+    apexlangName: maxNumberOfHop
+    attribute: 104
+    name: Max Number Of Hop
+    type: number
+    validation {
+        required: true
+    }
+    appearance {
+        attributeGroup: @expand
+        sequence: 1001
+    }
+    default {
+        value: 5
+    }
+    dependingOn {
+        attribute: @enable_expand/component
+        conditionType: =
+        value: Y
+    }
+    help {
+        helpText: Maximum number of hops possible while performing expand and focus actions. Default is 5.
+    }
+)
+
+customAttribute modes_options (
+    apexlangName: modesOptions
+    attribute: 85
+    name: Modes Options
+    type: checkboxes
+    appearance {
+        attributeGroup: @appearance
+        sequence: 860
+    }
+    default {
+        value: interaction:fitToScreen:sticky:evolution
+    }
+    dependingOn {
+        attribute: @attribute_10/component
+        conditionType: inList
+        list: modes
+    }
+
+    entry evolution (
+        sequence: 40
+        display: Evolution
+        return: evolution
+    )
+
+    entry fitToScreen (
+        sequence: 20
+        display: Fit to Screen
+        return: fitToScreen
+    )
+
+    entry interaction (
+        sequence: 10
+        display: Interaction
+        return: interaction
+    )
+
+    entry sticky (
+        sequence: 30
+        display: Sticky
+        return: sticky
+    )
+
+)
+
+customAttribute number_of_hops (
+    apexlangName: expandHops
+    attribute: 102
+    name: Expand Hops
+    type: number
+    validation {
+        required: true
+    }
+    appearance {
+        attributeGroup: @expand
+        sequence: 1000
+    }
+    builder {
+        common: false
+        showInWizard: false
+    }
+    default {
+        value: 1
+    }
+    dependingOn {
+        attribute: @enable_expand/component
+        conditionType: =
+        value: Y
+    }
+    help {
+        helpText: Retrieve n-hops neighbors of specified vertices. The expand hop value should be equal to or greater than 1.
+    }
+)
+
+customAttribute rule_based_groups (
+    apexlangName: ruleBasedGroups
+    attribute: 89
+    name: Rule Based Groups
+    type: textarea
+    appearance {
+        attributeGroup: @advanced
+        sequence: 890
+    }
+    help {
+        helpText: Groups are created based on defined conditions.
+    }
+    examples {
+        examples:
+            ```
+            [
+              {
+                "_id": 582378657398,
+                "name": "Manual Group by DEPARTMENT_ID",
+                "type": "group",
+                "applyOnLoad": false,
+                "component": "vertex",
+                "enabled": true,
+                "groupBy": "DEPARTMENT_ID",
+                "conditions": { "conditions": [], "operator": "and" }
+              },
+              {
+                "_id": 45245237398,
+                "name": "Manual Group by JOB_TITLE",
+                "type": "group",
+                "applyOnLoad": false,
+                "component": "vertex",
+                "enabled": true,
+                "groupBy": "JOB_TITLE",
+                "conditions": { "conditions": [], "operator": "and" }
+              }
+            ]
+            ```
+    }
+)
+
+customAttribute rulebasedstyles (
+    apexlangName: ruleBasedStyles
+    attribute: 88
+    name: Rule Based Styles
+    type: textarea
+    appearance {
+        attributeGroup: @advanced
+        sequence: 880
+    }
+    help {
+        helpText: Styles are applied to vertices and/or edges based on defined conditions.
+    }
+    examples {
+        examples:
+            ```
+            [
+                {
+                  "_id": 1,
+                  "component": "vertex",
+                  "stylingEnabled": true,
+                  "target": "vertex",
+                  "visibilityEnabled": true,
+                  "conditions": {
+                    "operator": "and",
+                    "conditions": [
+                      {
+                        "property": "COUNTRY_ID",
+                        "operator": "*",
+                        "value": ""
+                      }
+                    ]
+                  },
+                  "legendTitle": "Legend1",
+                  "style": {
+                    "children": {
+                      "flag": {
+                        "size": 10,
+                        "image": {
+                          "url": "url address",
+                          "scale": 0.8
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "_id": 2,
+                  "component": "vertex",
+                  "stylingEnabled": true,
+                  "target": "vertex",
+                  "visibilityEnabled": true,
+                  "conditions": {
+                    "operator": "or",
+                    "conditions": [
+                      {
+                        "property": "JOB_ID",
+                        "operator": "=",
+                        "value": "AD_PRES"
+                      }
+                    ]
+                  },
+                  "legendTitle": "Legend2",
+                  "style": {
+                    "icon": {
+                      "class": "fa-user-secret"
+                    }
+                  }
+                }
+            ]
+            ```
+    }
+)
+
+customAttribute schema_graph_name (
+    apexlangName: graphName
+    attribute: 97
+    name: Graph Name
+    appearance {
+        attributeGroup: @schema
+        sequence: 970
+    }
+    dependingOn {
+        attribute: @schema_visualization/component
+        conditionType: =
+        value: Y
+    }
+)
+
+customAttribute schema_graph_owner (
+    apexlangName: graphOwner
+    attribute: 96
+    name: Graph Owner
+    appearance {
+        attributeGroup: @schema
+        sequence: 960
+    }
+    dependingOn {
+        attribute: @schema_visualization/component
+        conditionType: =
+        value: Y
+    }
+)
+
+customAttribute schema_settings (
+    apexlangName: schemaSettings
+    attribute: 92
+    name: Schema Settings
+    type: textarea
+    appearance {
+        attributeGroup: @advanced
+        sequence: 920
+    }
+    help {
+        helpText: Settings of the schema view are configured here.
+    }
+)
+
+customAttribute schema_visualization (
+    apexlangName: schemaVisualizationRequiresOracleAi
+    attribute: 95
+    name: Schema Visualization (requires Oracle AI Database 26ai)
+    type: yesNo
+    appearance {
+        attributeGroup: @schema
+        sequence: 950
+    }
+    help {
+        helpText: Enables schema visualization when the user provides the graph name and the graph owner, this requires Oracle AI Database 26ai.
+    }
+)
+
+customAttribute searchvaluechanged (
+    apexlangName: customSearchFunction
+    attribute: 100
+    name: Custom Search Function
+    type: javaScriptCode
+    appearance {
+        attributeGroup: @callbacks
+        sequence: 1000
+    }
+    builder {
+        common: false
+        showInWizard: false
+    }
+    help {
+        helpText:
+            ```
+            The function retrieves vertices and edges matching a keyword. It takes two parameters: keyword and searchGraph. The function should return a Promise resolving to a SearchResult object.
+            SearchResult Format
+            <pre>
+            interface SearchResult {
+              vertices?: Record<Id, Vertex>;
+              edges?: Record<Id, Edge>;
+              defaultProps?: Record<Id, string | number>;
+            }
+            </pre>
+            ```
+    }
+    examples {
+        examples:
+            ```
+            <pre>
+              const vertices = searchGraph.vertices.filter(v => v.label.includes(keyword));
+              const edges = searchGraph.edges.filter(e => e.label.includes(keyword));
+            
+              const vertexSearchResult = vertices.reduce((acc, v) => ({ ...acc, [v.id]: v }), {});
+              const edgeSearchResult = edges.reduce((acc, e) => ({ ...acc, [e.id]: e }), {});
+            
+              return Promise.resolve({
+                vertices: vertexSearchResult,
+                edges: edgeSearchResult
+              });
+            </pre>
+            ```
+    }
+)
+
+customAttribute showtitle (
+    apexlangName: showFullLabelTextOnHover
+    attribute: 78
+    name: Show full label text on hover
+    type: yesNo
+    appearance {
+        attributeGroup: @caption
+        sequence: 154
+    }
+    default {
+        value: true
+    }
+)
+
+customAttribute size_mode (
+    apexlangName: sizeMode
+    attribute: 60
+    name: Size Mode
+    type: selectList
+    appearance {
+        attributeGroup: @appearance
+        sequence: 600
+    }
+
+    entry compact (
+        sequence: 20
+        display: Compact
+        return: compact
+    )
+
+    entry normal (
+        sequence: 10
+        display: Normal
+        return: normal
+    )
+
+)
+
+customAttribute spacing (
+    apexlangName: spacing
+    attribute: 19
+    name: Spacing
+    type: number
+    appearance {
+        attributeGroup: @layout
+        sequence: 41
+    }
+    dependingOn {
+        attribute: @attribute_04/component
+        conditionType: inList
+        list: [
+            circle
+            concentric
+            force
+            grid
+            radial
+        ]
+    }
+    help {
+        helpText:
+            ```
+            Circle Layout: spacing sets the radius of the circle. Default is 2. <br />
+            
+            Concentric Layout: spacing sets the minimum spacing in between vertices. It is used for radius adjustment. Default is 2. <br />
+            
+            Force Layout: spacing determines how close different vertices are rendered next to each other. Default is 1.5. <br />
+            
+            Grid Layout: spacing sets the space between elements in the grid. Default is 2. <br />
+            
+            Radial Layout: spacing sets separation gap between neighboring vertices if they share the same parent vertex. If set to 0, no spacing will be applied. Default is 2. <br />
+            ```
+    }
+)
+
+customAttribute text_color (
+    apexlangName: textColor
+    attribute: 84
+    name: Text Color
+    type: color
+    appearance {
+        attributeGroup: @appearance
+        sequence: 840
+    }
+    dependingOn {
+        attribute: @custom_theme/component
+        conditionType: =
+        value: Y
+    }
+)
+
+customAttribute tooltipcharlimit (
+    apexlangName: tooltipMaxLength
+    attribute: 80
+    name: Tooltip Max Length
+    type: integer
+    appearance {
+        attributeGroup: @appearance
+        sequence: 800
+    }
+    help {
+        helpText: Limit of characters shown on the vertex/edge tooltip. default is 100
+    }
+)
+
+customAttribute visibility_toggle_mode (
+    apexlangName: visibilityToggleMode
+    attribute: 99
+    name: Visibility Toggle Mode
+    type: selectList
+    validation {
+        required: true
+    }
+    appearance {
+        attributeGroup: @legend
+        sequence: 30
+    }
+    default {
+        value: hideWhenAnyUnchecked
+    }
+    help {
+        helpText: Specifies how the visibility of graph vertices and edges are determined when the visibility checkbox of a legend is toggled.
+    }
+
+    entry hideWhenAllUnchecked (
+        sequence: 20
+        display: Hide when all unchecked
+        return: hideWhenAllUnchecked
+        help {
+            helpText: Hide vertices or edges when all the legend items influencing it have the visibility checkboxes unchecked.
+        }
+    )
+
+    entry hideWhenAnyUnchecked (
+        sequence: 10
+        display: "Hide when any unchecked "
+        return: hideWhenAnyUnchecked
+        help {
+            helpText: Hide vertices or edges when any of the legend items influencing it has the visibility checkbox unchecked.
+        }
+    )
+
+)
+

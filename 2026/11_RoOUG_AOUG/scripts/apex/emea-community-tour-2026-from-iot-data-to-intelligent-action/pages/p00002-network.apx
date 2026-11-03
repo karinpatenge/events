@@ -1,0 +1,718 @@
+page 2 (
+    name: Network
+    alias: NETWORK
+    title: Network
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    javaScript {
+        executeWhenPageLoads:
+            ```javascript-browser
+            setInterval(function () {
+              if (document.hidden) { return; }                       // tab in the background
+              ["network", "map", "anomalies"].forEach(function (id) {
+                var r = apex.region(id);                             // null if no region has this Static ID
+                if (!r || !r.element.is(":visible")) { return; }     // missing or collapsed region
+                if (id === "map" && !r.getMapObject()) { return; }   // map not initialized yet
+                try { r.refresh(); } catch (e) { apex.debug.warn("refresh " + id + ": " + e.message); }
+              });
+            }, 30000);
+            ```
+    }
+    css {
+        inline:
+            ```css
+            /* map legend: one swatch per layer, in the colour of its type */
+            .dh-leg { display: inline-flex; align-items: center; gap: 8px; }
+            .dh-leg::before { content: ""; display: inline-block; flex: none; }
+            .dh-leg-pipe::before   { width: 20px; border-top: 2px solid #9B9B9B; }
+            .dh-leg-bypass::before { width: 20px; border-top: 3px dashed #5F96AE; }
+            .dh-leg-building::before, .dh-leg-substation::before,
+            .dh-leg-pump::before,     .dh-leg-plant::before {
+              width: 12px; height: 12px; border-radius: 50%; border: 1px solid #FFFFFF; box-shadow: 0 0 0 1px #9B9B9B; }
+            .dh-leg-building::before   { background: #7FA65F; width: 9px;  height: 9px; }
+            .dh-leg-substation::before { background: #8D6E63; }
+            .dh-leg-pump::before       { background: #2C3E50; width: 15px; height: 15px; }
+            .dh-leg-plant::before      { background: #8E44AD; width: 18px; height: 18px; }
+            .dh-leg { display: inline-flex; align-items: center; gap: 8px;
+                      margin-inline-end: 24px; margin-block: 4px;  }     /* space between the entries */
+            
+            
+            /* colour per anomaly type (class from DH_OPEN_ANOMALIES_V.ANOMALY_CLASS);
+               the card and its inner .a-CardView both get it, so the theme cannot paint over it */
+            .dh-anom-threshold, .dh-anom-threshold .a-CardView { --a-cv-background-color: #F8D7D3; background-color: #F8D7D3 !important; }  /* light red     */
+            .dh-anom-zscore,    .dh-anom-zscore .a-CardView    { --a-cv-background-color: #FCE8C3; background-color: #FCE8C3 !important; }  /* light orange  */
+            .dh-anom-trend,     .dh-anom-trend .a-CardView     { --a-cv-background-color: #F6D5E5; background-color: #F6D5E5 !important; }  /* light magenta */
+            .dh-anom-flatline,  .dh-anom-flatline .a-CardView  { --a-cv-background-color: #E8DFDA; background-color: #E8DFDA !important; }  /* light brown   */
+            .dh-anom-no-data,   .dh-anom-no-data .a-CardView   { --a-cv-background-color: #E3E3E3; background-color: #E3E3E3 !important; }  /* light grey    */
+            .dh-anom-tag { display: inline-block; padding: 2px 8px; margin: 2px 4px 2px 0; border-radius: 10px; font-size: 12px; }
+            ```
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/title-bar
+            templateOptions: [
+                #DEFAULT#
+                t-BreadcrumbRegion--useBreadcrumbTitle
+            ]
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region graph-filter (
+        name: Graph filter
+        type: staticContent
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/blank-with-attributes
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region map (
+        name: Map
+        type: map
+        layout {
+            sequence: 40
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-expanded
+                t-Region--scrollBody
+            ]
+        }
+        advanced {
+            htmlDomId: map
+        }
+        headerAndFooter {
+            footerText: <p>Circles: red alarm, orange warning, magenta predicted problem; otherwise the colour of the type.</p>
+        }
+        map {
+            background: builtIn
+            standard: oracleWorldMap
+        }
+        controls {
+            options: [
+                rectangleZoom
+                scaleBar
+                infiniteMap
+                distanceTool
+            ]
+        }
+        attributes {
+            messagesPosition: below
+        }
+
+        layer buildings (
+            name: Buildings
+            layout {
+                sequence: 30
+            }
+            source {
+                tableName: DH_ASSET_STATUS_V
+                whereClause: asset_type = 'BUILDING' AND :P2_SHOW_BUILDINGS = 'Y'
+                pageItemsToSubmit: P2_SHOW_BUILDINGS
+            }
+            columnMapping {
+                geometryColumn: GEOM
+                primaryKeyColumn: ASSET_ID
+            }
+            pointObjects {
+                shape: Circle
+                shapeScale: 0.8
+            }
+            appearance {
+                fillColor: &HEALTH_COLOR.,
+                fillOpacity: .9
+                strokeColor: #ffffff
+                strokeWidth: 1
+            }
+            tooltip {
+                advancedFormatting: true
+                htmlExpression:
+                    ```html
+                    <strong>&ASSET_ID.</strong> &NAME.<br>
+                    &TYPE_NAME. · &DISTRICT.<br>
+                    <span style="color:&HEALTH_COLOR.; font-weight:bold">&HEALTH_STATUS.</span> &HEALTH_REASON.
+                    ```
+            }
+            link {
+                type: redirectThisApp
+                target: {
+                    page: 4
+                    items: {
+                        P4_ASSET_ID: &ASSET_ID.
+                    }
+                }
+            }
+            legend {
+                advancedFormatting: true
+                htmlExpression: <span class="dh-leg dh-leg-building">Buildings</span>
+            }
+            serverSideCondition {
+                type: item=value
+                item: P2_SHOW_BUILDINGS
+                value: Y
+            }
+        )
+
+        layer bypasses (
+            name: Bypasses
+            layerType: lines
+            layout {
+                sequence: 20
+            }
+            source {
+                tableName: DH_PIPE_LINES_V
+                whereClause: pipe_kind = 'BYPASS'
+            }
+            columnMapping {
+                geometryColumn: GEOM
+                primaryKeyColumn: PIPE_ID
+            }
+            appearance {
+                strokeStyle: dashed
+                strokeColor: &LINE_COLOR.
+                strokeWidth: 3
+            }
+            tooltip {
+                advancedFormatting: true
+                htmlExpression: · valve &VALVE_STATE.
+            }
+            legend {
+                advancedFormatting: true
+                htmlExpression: <span class="dh-leg dh-leg-bypass">Bypasses (green when open)</span>
+            }
+        )
+
+        layer heat-plants (
+            name: Heat plants
+            layout {
+                sequence: 60
+            }
+            source {
+                tableName: DH_ASSET_STATUS_V
+                whereClause: asset_type = 'PLANT'
+            }
+            columnMapping {
+                geometryColumn: GEOM
+                primaryKeyColumn: ASSET_ID
+            }
+            pointObjects {
+                shape: Circle
+                shapeScale: 2
+            }
+            appearance {
+                fillColor: &HEALTH_COLOR.,
+                fillOpacity: .9
+                strokeColor: #ffffff
+                strokeWidth: 1
+            }
+            tooltip {
+                advancedFormatting: true
+                htmlExpression:
+                    ```html
+                    <strong>&ASSET_ID.</strong> &NAME.<br>
+                    &TYPE_NAME. · &DISTRICT.<br>
+                    <span style="color:&HEALTH_COLOR.; font-weight:bold">&HEALTH_STATUS.</span> &HEALTH_REASON.
+                    ```
+            }
+            legend {
+                advancedFormatting: true
+                htmlExpression: <span class="dh-leg dh-leg-plant">Heat plants</span>
+            }
+        )
+
+        layer pipes (
+            name: Pipes
+            layerType: lines
+            layout {
+                sequence: 10
+            }
+            source {
+                tableName: DH_PIPE_LINES_V
+                whereClause: pipe_kind <> 'BYPASS' AND (:P2_SHOW_BUILDINGS = 'Y' OR to_asset_type <> 'BUILDING')
+                pageItemsToSubmit: P2_SHOW_BUILDINGS
+            }
+            columnMapping {
+                geometryColumn: GEOM
+                primaryKeyColumn: PIPE_ID
+            }
+            appearance {
+                strokeColor: &LINE_COLOR.
+                strokeWidth: 2
+            }
+            tooltip {
+                advancedFormatting: true
+                htmlExpression:
+                    ```html
+                    <strong>&PIPE_ID.</strong> &PIPE_KIND.<br>&FROM_ASSET. → &TO_ASSET. · DN &DIAMETER_MM. · &LENGTH_M. m
+                    
+                    ```
+            }
+            legend {
+                advancedFormatting: true
+                htmlExpression: <span class="dh-leg dh-leg-pipe">Pipes</span>
+            }
+        )
+
+        layer pump-stations (
+            name: Pump stations
+            layout {
+                sequence: 50
+            }
+            source {
+                tableName: DH_ASSET_STATUS_V
+                whereClause: asset_type = 'PUMP_STATION'
+            }
+            columnMapping {
+                geometryColumn: GEOM
+                primaryKeyColumn: ASSET_ID
+            }
+            pointObjects {
+                shape: Circle
+                shapeScale: 1.5
+            }
+            appearance {
+                fillColor: &HEALTH_COLOR.,
+                fillOpacity: .9
+                strokeColor: #ffffff
+                strokeWidth: 1
+            }
+            tooltip {
+                advancedFormatting: true
+                htmlExpression:
+                    ```html
+                    <strong>&ASSET_ID.</strong> &NAME.<br>
+                    &TYPE_NAME. · &DISTRICT.<br>
+                    <span style="color:&HEALTH_COLOR.; font-weight:bold">&HEALTH_STATUS.</span> &HEALTH_REASON.
+                    ```
+            }
+            link {
+                type: redirectThisApp
+                target: {
+                    page: 4
+                    items: {
+                        P4_ASSET_ID: &ASSET_ID.
+                    }
+                    clearCache: 4
+                }
+            }
+            legend {
+                advancedFormatting: true
+                htmlExpression: <span class="dh-leg dh-leg-pump">Pump stations</span>
+            }
+        )
+
+        layer substations (
+            name: Substations
+            layout {
+                sequence: 40
+            }
+            source {
+                tableName: DH_ASSET_STATUS_V
+                whereClause: asset_type = 'SUBSTATION'
+            }
+            columnMapping {
+                geometryColumn: GEOM
+                primaryKeyColumn: ASSET_ID
+            }
+            pointObjects {
+                shape: Circle
+                shapeScale: 1.1
+            }
+            appearance {
+                fillColor: &HEALTH_COLOR.,
+                fillOpacity: .9
+                strokeColor: #ffffff
+                strokeWidth: 1
+            }
+            tooltip {
+                advancedFormatting: true
+                htmlExpression:
+                    ```html
+                    <strong>&ASSET_ID.</strong> &NAME.<br>
+                    &TYPE_NAME. · &DISTRICT.<br>
+                    <span style="color:&HEALTH_COLOR.; font-weight:bold">&HEALTH_STATUS.</span> &HEALTH_REASON.
+                    ```
+            }
+            link {
+                type: redirectThisApp
+                target: {
+                    page: 4
+                    items: {
+                        P4_ASSET_ID: &ASSET_ID.
+                    }
+                    clearCache: 4
+                }
+            }
+            legend {
+                advancedFormatting: true
+                htmlExpression: <span class="dh-leg dh-leg-substation">Substations</span>
+            }
+        )
+
+    )
+
+    region network-graph (
+        name: Network graph
+        title: Network graph
+        type: plugin/graphVisualization
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT *
+                FROM   GRAPH_TABLE (
+                    dh_network
+                    MATCH (a IS asset) -[e IS supplies]-> (b IS asset)
+                    WHERE (:P2_SHOW_BUILDINGS = 'Y' OR b.asset_type <> 'BUILDING')
+                    COLUMNS (VERTEX_ID(a) AS id_a, EDGE_ID(e) AS id_e, VERTEX_ID(b) AS id_b))
+                ```
+            pageItemsToSubmit: P2_SHOW_BUILDINGS
+        }
+        layout {
+            sequence: 30
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-expanded
+                t-Region--scrollBody
+            ]
+        }
+        advanced {
+            htmlDomId: network
+        }
+        settings {
+            displaySize: 500
+            liveSearch: true
+        }
+        plugin-appearance {
+            height2: 640
+            sizeMode: compact
+            edgeMarker: arrow
+            defaultValuesForModes: [
+                enableFitToScreen
+                enableEvolutionSetting
+            ]
+            display: [
+                modes
+                exploration
+            ]
+            modesOptions: [
+                interaction
+                fitToScreen
+                sticky
+                evolution
+            ]
+            explorationOptions: [
+                expand
+                focus
+                group
+                ungroup
+                drop
+                undo
+                redo
+                reset
+            ]
+        }
+        plugin-layout {
+            layout: radial
+        }
+        plugin-caption {
+            vertexCaption: ASSET_ID
+        }
+        plugin-expand {
+            enableExpand: true
+        }
+        plugin-advanced {
+            baseStyles:
+                ```
+                {
+                    "vertex": { "size": 14, "color": "#7FA65F",
+                                "label": { "text": "${properties.ASSET_ID}", "angle": 270, "d": 4, "font": { "size": 20 }, "color": "#7FA65F" },
+                                "border": { "color": "#FFFFFF", "width": 1 } },
+                    "edge":   { "width": 2, "color": "#9B9B9B",
+                                "label": { "text": "${properties.PIPE_ID}", "font": { "size": 20 }, "color": "#6B6B6B" } }
+                  }
+                ```
+            ruleBasedStyles:
+                ```
+                [
+                {"legendTitle":"Heat plant","component":"vertex","target":"vertex","stylingEnabled":true,"conditions":{"operator":"and","conditions":[{"property":"ASSET_TYPE","operator":"=","value":"PLANT"}]},"style":{"color":"#8E44AD","size":30,"icon":{"class":"fa-fire","color":"#FFFFFF"},"label":{"text":"${properties.ASSET_ID}","angle":270,"d":4,"font":{"size":20},"color":"#8E44AD"}}},
+                {"legendTitle":"Pump station","component":"vertex","target":"vertex","stylingEnabled":true,"conditions":{"operator":"and","conditions":[{"property":"ASSET_TYPE","operator":"=","value":"PUMP_STATION"}]},"style":{"color":"#2C3E50","size":24,"icon":{"class":"fa-cog","color":"#FFFFFF"},"label":{"text":"${properties.ASSET_ID}","angle":270,"d":4,"font":{"size":20},"color":"#2C3E50"}}},
+                {"legendTitle":"Substation","component":"vertex","target":"vertex","stylingEnabled":true,"conditions":{"operator":"and","conditions":[{"property":"ASSET_TYPE","operator":"=","value":"SUBSTATION"}]},"style":{"color":"#8D6E63","size":18,"label":{"text":"${properties.ASSET_ID}","angle":270,"d":4,"font":{"size":20},"color":"#8D6E63"}}},
+                {"legendTitle":"Building","component":"vertex","target":"vertex","stylingEnabled":true,"conditions":{"operator":"and","conditions":[{"property":"ASSET_TYPE","operator":"=","value":"BUILDING"}]},"style":{"color":"#7FA65F","size":12,"label":{"text":"${properties.ASSET_ID}","angle":270,"d":4,"font":{"size":20},"color":"#7FA65F"}}},
+                {"legendTitle":"Alarm (flashing)","component":"vertex","target":"vertex","stylingEnabled":true,"conditions":{"operator":"and","conditions":[{"property":"HEALTH_STATUS","operator":"=","value":"ALARM"}]},"animations":[[{"duration":1.2,"timingFunction":"ease-in-out","keyFrames":[{"percentage":0,"style":{"opacity":1}},{"percentage":50,"style":{"opacity":0.25}},{"percentage":100,"style":{"opacity":1}}]}]],"style":{"color":"#C74634","label":{"text":"${properties.ASSET_ID}","angle":270,"d":4,"font":{"size":20},"color":"#C74634"}}},
+                {"legendTitle":"Warning","component":"vertex","target":"vertex","stylingEnabled":true,"conditions":{"operator":"and","conditions":[{"property":"HEALTH_STATUS","operator":"=","value":"WARNING"}]},"style":{"color":"#F0AB00","label":{"text":"${properties.ASSET_ID}","angle":270,"d":4,"font":{"size":20},"color":"#F0AB00"}}},
+                {"legendTitle":"Watch (predicted)","component":"vertex","target":"vertex","stylingEnabled":true,"conditions":{"operator":"and","conditions":[{"property":"HEALTH_STATUS","operator":"=","value":"WATCH"}]},"style":{"color":"#D63384","label":{"text":"${properties.ASSET_ID}","angle":270,"d":4,"font":{"size":20},"color":"#D63384"}}},
+                {"legendTitle":"Bypass (closed)","component":"edge","target":"edge","stylingEnabled":true,"conditions":{"operator":"and","conditions":[{"property":"VALVE_STATE","operator":"=","value":"CLOSED"}]},"style":{"color":"#5F96AE"}}
+                ]
+                
+                ```
+        }
+
+        column ID_A (
+            source {
+                dataType: CLOB
+            }
+            layout {
+                sequence: 10
+            }
+        )
+
+        column ID_B (
+            source {
+                dataType: CLOB
+            }
+            layout {
+                sequence: 30
+            }
+        )
+
+        column ID_E (
+            source {
+                dataType: CLOB
+            }
+            layout {
+                sequence: 20
+            }
+        )
+
+    )
+
+    region open-anomalies (
+        name: Open anomalies
+        title: &ASSET_ID. &ASSET_NAME.
+        type: cards
+        source {
+            location: localDatabase
+            tableName: DH_OPEN_ANOMALIES_V
+        }
+        orderBy {
+            type: staticValue
+            orderByClause: DECODE(severity, 'ALARM', 1, 'WARNING', 2, 3), asset_id
+        }
+        layout {
+            sequence: 50
+            slot: body
+        }
+        appearance {
+            template: @/cards-container
+            templateOptions: [
+                #DEFAULT#
+                t-CardsRegion--hideHeader js-addHiddenHeadingRoleDesc
+            ]
+        }
+        advanced {
+            htmlDomId: anomalies
+        }
+        headerAndFooter {
+            headerText:
+                ```html
+                <p>Anomalies found by the detection job, which checks every reading of the last
+                two minutes. A card stays here until its condition has been gone for one minute.
+                Click a card to open the asset.</p>
+                <p>
+                  <span class="dh-anom-tag dh-anom-threshold">Limit exceeded</span> above the warning or alarm limit
+                  <span class="dh-anom-tag dh-anom-zscore">Unusual value</span> far from the asset's normal values (z-score)
+                  <span class="dh-anom-tag dh-anom-trend">Trend towards the limit</span> rising, with the hours left until the alarm limit
+                  <span class="dh-anom-tag dh-anom-flatline">Value frozen</span> the value does not change, sensor probably stuck
+                  <span class="dh-anom-tag dh-anom-no-data">No data</span> the twin has stopped sending
+                </p>
+                
+                ```
+        }
+        componentAppearance {
+            gridColumns: 3
+        }
+        card {
+            primaryKeyColumn1: ANOMALY_ID
+        }
+        title {
+            column: ASSET_ID
+            cssClasses: &ANOMALY_CLASS.
+        }
+        subtitle {
+            advancedFormatting: true
+            htmlExpression: &ASSET_NAME. · &ANOMALY_TYPE_NAME. · &SEVERITY.
+        }
+        body {
+            advancedFormatting: true
+            htmlExpression: &DETAILS.
+        }
+
+        action action (
+            type: fullCard
+            layout {
+                sequence: 10
+            }
+            behavior {
+                target: {
+                    page: 4
+                    items: {
+                        P4_ASSET_ID: &ASSET_ID.
+                        P4_METRIC: &METRIC.
+                    }
+                    clearCache: 4
+                }
+            }
+        )
+
+    )
+
+    pageItem P2_BBOX (
+        type: hidden
+        layout {
+            sequence: 10
+            region: @map
+            slot: regionBody
+        }
+    )
+
+    pageItem P2_SHOW_BUILDINGS (
+        type: switch
+        label {
+            label: Show buildings
+            alignment: left
+        }
+        settings {
+            useDefaults: false
+            onValue: Y
+            onLabel: Yes
+            offValue: N
+            offLabel: No
+        }
+        layout {
+            sequence: 20
+            region: @graph-filter
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+        }
+        default {
+            type: static
+            staticValue: N
+        }
+    )
+
+    dynamicAction refresh-graph-and-map (
+        name: Apply building filter
+        execution {
+            sequence: 10
+        }
+        when {
+            selectionType: items
+            items: P2_SHOW_BUILDINGS
+        }
+
+        action native-submit-page (
+            action: submitPage
+            settings {
+                requestButtonName: APPLY_FILTER
+            }
+            execution {
+                sequence: 10
+                fireOnInit: false
+            }
+        )
+
+    )
+
+    dynamicAction zoom-to-network (
+        name: Zoom to network
+        execution {
+            sequence: 20
+        }
+        when {
+            event: region/map/spatialmapinitialized
+            selectionType: region
+            region: @map
+        }
+
+        action native-javascript-code (
+            action: executeJsCode
+            settings {
+                jsCode:
+                    ```javascript-browser
+                      var map = apex.region("map").getMapObject();     // map object, ready after "Map Initialized"
+                      var b   = $v("P2_BBOX").split(",").map(Number);  // minLon, minLat, maxLon, maxLat
+                      if (map && b.length === 4) {
+                        map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 40, animate: false });
+                      }
+                    ```
+            }
+            execution {
+                sequence: 10
+                fireOnInit: false
+            }
+        )
+
+    )
+
+    computation p2-bbox (
+        itemName: P2_BBOX
+        execution {
+            sequence: 10
+            point: beforeHeader
+        }
+        computation {
+            sqlQuery:
+                ```sql
+                SELECT TO_CHAR(MIN(longitude), 'TM9', 'NLS_NUMERIC_CHARACTERS=''.,''') || ',' ||
+                       TO_CHAR(MIN(latitude),  'TM9', 'NLS_NUMERIC_CHARACTERS=''.,''') || ',' ||
+                       TO_CHAR(MAX(longitude), 'TM9', 'NLS_NUMERIC_CHARACTERS=''.,''') || ',' ||
+                       TO_CHAR(MAX(latitude),  'TM9', 'NLS_NUMERIC_CHARACTERS=''.,''') AS bbox
+                FROM   dh_assets
+                ```
+        }
+    )
+
+    branch (
+        name: Back to Network
+        execution {
+            sequence: 10
+        }
+        behavior {
+            target: {
+                page: 2
+            }
+        }
+    )
+
+)
+

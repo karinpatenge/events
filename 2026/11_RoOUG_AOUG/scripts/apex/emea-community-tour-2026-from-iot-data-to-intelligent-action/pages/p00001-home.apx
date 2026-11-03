@@ -1,0 +1,139 @@
+page 1 (
+    name: Home
+    alias: HOME
+    title: EMEA Community Tour 2026 - From IoT Data to Intelligent Action
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    javaScript {
+        executeWhenPageLoads:
+            ```javascript-browser
+            setInterval(function () {
+              if (document.hidden) { return; }                       // tab in the background
+              ["network", "map", "anomalies"].forEach(function (id) {
+                var r = apex.region(id);                             // null if no region has this Static ID
+                if (!r || !r.element.is(":visible")) { return; }     // missing or collapsed region
+                if (id === "map" && !r.getMapObject()) { return; }   // map not initialized yet
+                try { r.refresh(); } catch (e) { apex.debug.warn("refresh " + id + ": " + e.message); }
+              });
+            }, 30000);
+            ```
+    }
+    css {
+        inline:
+            ```css
+            /* tile icons: one circle colour per page */
+            #tiles .a-CardView-item:has(.dh-tile-network)   { --dh-tile: #2C3E50; }  /* dark slate */
+            #tiles .a-CardView-item:has(.dh-tile-incident)  { --dh-tile: #C74634; }  /* alarm red  */
+            #tiles .a-CardView-item:has(.dh-tile-asset)     { --dh-tile: #8D6E63; }  /* brown      */
+            #tiles .a-CardView-item:has(.dh-tile-assistant) { --dh-tile: #16A085; }  /* teal       */
+            #tiles .a-CardView-item:has([class*="dh-tile-"]) .a-CardView-iconWrap,
+            #tiles .a-CardView-item:has([class*="dh-tile-"]) .a-CardView-icon {   /* the circle; its wrapper is a square */
+              --a-cv-icon-background-color: var(--dh-tile);
+              background-color: var(--dh-tile) !important;
+              color: #FFFFFF !important; border-radius: 50%;
+            }
+            ```
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region emea-community-tour-2026-from-iot-data-to-intelligent-action (
+        name: EMEA Community Tour 2026 - From IoT Data to Intelligent Action
+        type: staticContent
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/hero
+            templateOptions: #DEFAULT#
+        }
+        image {
+            fileUrl: #APP_FILES#icons/app-icon-512.png
+        }
+    )
+
+    region pages (
+        name: Pages
+        type: cards
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT page_no, title, body, icon, badge,
+                       apex_page.get_url(p_page => page_no) AS link
+                FROM  (SELECT 2 AS page_no, 'Network' AS title, 'Network graph and map, coloured by health' AS body,
+                              'fa fa-network-hub dh-tile-network' AS icon,
+                              (SELECT COUNT(*) FROM dh_assets WHERE asset_type = 'BUILDING' AND health_status = 'ALARM')
+                              || ' cold buildings' AS badge
+                       FROM dual
+                       UNION ALL
+                       SELECT 3, 'Incident', 'Root cause and impact path, bypass, work order', 'fa fa-alert dh-tile-incident',
+                              (SELECT COUNT(*) FROM dh_anomalies WHERE status <> 'CLOSED') || ' open anomalies'
+                       FROM dual
+                       UNION ALL
+                       SELECT 4, 'Asset', 'Telemetry with limits, anomalies, maintenance', 'fa fa-gear dh-tile-asset',
+                              (SELECT COUNT(*) FROM dh_work_orders WHERE status IN ('NEW', 'PLANNED')) || ' open work orders'
+                       FROM dual
+                       UNION ALL
+                       SELECT 5, 'Assistant', 'Ask the operations agent', 'fa fa-chatbot dh-tile-assistant', NULL
+                       FROM dual)
+                ORDER  BY page_no
+                
+                ```
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/cards-container
+            templateOptions: [
+                #DEFAULT#
+                t-CardsRegion--hideHeader js-addHiddenHeadingRoleDesc
+            ]
+        }
+        advanced {
+            htmlDomId: tiles
+        }
+        componentAppearance {
+            gridColumns: 4
+        }
+        card {
+            primaryKeyColumn1: PAGE_NO
+        }
+        title {
+            column: TITLE
+        }
+        body {
+            column: BODY
+        }
+        iconAndBadge {
+            iconSource: iconClassColumn
+            iconColumn: ICON
+            badgeColumn: BADGE
+        }
+
+        action action (
+            type: fullCard
+            layout {
+                sequence: 10
+            }
+            behavior {
+                type: redirectUrl
+                targetUrl: &LINK.
+            }
+        )
+
+    )
+
+)
+

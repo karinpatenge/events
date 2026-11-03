@@ -1,0 +1,97 @@
+page 5 (
+    name: Assistant
+    alias: ASSISTANT
+    title: Assistant
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    css {
+        inline: ".dh-chat { min-height: 70vh; }   /* room for the conversation */"
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/title-bar
+            templateOptions: [
+                #DEFAULT#
+                t-BreadcrumbRegion--useBreadcrumbTitle
+            ]
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region operations-assistant (
+        name: Operations assistant
+        type: staticContent
+        source {
+            htmlCode: <div id="ops-chat" class="dh-chat"></div>
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+    )
+
+    dynamicAction start-assistant (
+        name: Start assistant
+        execution {
+            sequence: 10
+        }
+        when {
+            event: ready
+        }
+
+        action native-open-ai-assistant (
+            action: showAiAssistant
+            genAI {
+                agent: @heat_network_ops
+            }
+            appearance {
+                displayAs: inline
+                containerSelector: #ops-chat
+            }
+            quickActions {
+                message1:
+                    ```
+                    What is the situation in the network?
+                    Why are the buildings cold?
+                    What can we do right now for the hospital?
+                    Which pump station will fail next if we do nothing?
+                    ```
+            }
+            execution {
+                sequence: 10
+            }
+        )
+
+    )
+
+)
+

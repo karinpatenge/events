@@ -1,0 +1,622 @@
+page 3 (
+    name: Incident
+    alias: INCIDENT
+    title: Incident
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region analysis (
+        name: Analysis
+        type: staticContent
+        layout {
+            sequence: 40
+            slot: body
+        }
+        appearance {
+            template: @/blank-with-attributes
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/title-bar
+            templateOptions: [
+                #DEFAULT#
+                t-BreadcrumbRegion--useBreadcrumbTitle
+            ]
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region impact (
+        name: Impact
+        type: classicReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT jt.asset_name                                          AS "Asset",
+                       jt.downstream_buildings                                AS "Buildings supplied",
+                       jt.apartments                                          AS "Apartments supplied",
+                       jt.cut_off                                             AS "Cold if it fails",
+                       REPLACE(REPLACE(REPLACE(jt.critical, '["'), '"]'), '","', ', ') AS "Critical buildings affected"
+                FROM   JSON_TABLE(agent_impact_analysis(:P3_ASSET_ID), '$'
+                         COLUMNS (asset_name           VARCHAR2(100)  PATH '$.asset_name',
+                                  downstream_buildings NUMBER         PATH '$.downstream_buildings',
+                                  apartments           NUMBER         PATH '$.apartments',
+                                  cut_off              NUMBER         PATH '$.if_asset_out_of_service.buildings_without_supply',
+                                  critical             VARCHAR2(4000) FORMAT JSON PATH '$.if_asset_out_of_service.critical_buildings')) jt
+                
+                
+                
+                ```
+            pageItemsToSubmit: P3_ASSET_ID
+        }
+        layout {
+            sequence: 10
+            parentRegion: @analysis
+            slot: subRegions
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+        componentAppearance {
+            template: @/value-attribute-pairs-column
+            templateOptions: [
+                #DEFAULT#
+                t-AVPList--fixedLabelLarge
+                t-AVPList--leftAligned
+            ]
+        }
+        pagination {
+            type: nextAndPreviousLinks
+        }
+
+        column "Apartments supplied" (
+            reportColumnQueryId: 3
+            derivedColumn: N
+            heading {
+                heading: Apartments Supplied
+                alignment: end
+            }
+            layout {
+                sequence: 30
+                columnAlignment: end
+            }
+        )
+
+        column Asset (
+            reportColumnQueryId: 1
+            derivedColumn: N
+            heading {
+                heading: Asset
+            }
+            layout {
+                sequence: 10
+            }
+        )
+
+        column "Buildings supplied" (
+            reportColumnQueryId: 2
+            derivedColumn: N
+            heading {
+                heading: Buildings Supplied
+                alignment: end
+            }
+            layout {
+                sequence: 20
+                columnAlignment: end
+            }
+        )
+
+        column "Cold if it fails" (
+            reportColumnQueryId: 4
+            derivedColumn: N
+            heading {
+                heading: Cold If It Fails
+                alignment: end
+            }
+            layout {
+                sequence: 40
+                columnAlignment: end
+            }
+        )
+
+        column "Critical buildings affected" (
+            reportColumnQueryId: 5
+            derivedColumn: N
+            heading {
+                heading: Critical Buildings Affected
+            }
+            layout {
+                sequence: 50
+            }
+        )
+
+    )
+
+    region incident (
+        name: Incident
+        type: staticContent
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+    )
+
+    region mitigation-options (
+        name: Mitigation options
+        type: classicReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT jt.action                                              AS "Option",
+                       jt.still_cold                                          AS "Still cold",
+                       REPLACE(REPLACE(REPLACE(jt.critical, '["'), '"]'), '","', ', ') AS "Critical still cold"
+                FROM   JSON_TABLE(agent_impact_analysis(:P3_ASSET_ID), '$.mitigation_options[*]'
+                         COLUMNS (action     VARCHAR2(200)  PATH '$.action',
+                                  still_cold NUMBER         PATH '$.result_if_out_of_service.buildings_without_supply',
+                                  critical   VARCHAR2(4000) FORMAT JSON PATH '$.result_if_out_of_service.critical_buildings')) jt
+                
+                ```
+            pageItemsToSubmit: P3_ASSET_ID
+        }
+        layout {
+            sequence: 20
+            parentRegion: @analysis
+            slot: subRegions
+            startNewRow: false
+            columnSpan: 6
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+        componentAppearance {
+            template: @/value-attribute-pairs-column
+            templateOptions: [
+                #DEFAULT#
+                t-AVPList--leftAligned
+            ]
+        }
+        pagination {
+            type: nextAndPreviousLinks
+        }
+        messages {
+            whenNoDataFound: No closed bypass valve leads into the affected area.
+        }
+
+        column "Critical still cold" (
+            reportColumnQueryId: 3
+            derivedColumn: N
+            heading {
+                heading: Critical Still Cold
+            }
+            layout {
+                sequence: 30
+            }
+        )
+
+        column Option (
+            reportColumnQueryId: 1
+            derivedColumn: N
+            heading {
+                heading: Option
+            }
+            layout {
+                sequence: 10
+            }
+        )
+
+        column "Still cold" (
+            reportColumnQueryId: 2
+            derivedColumn: N
+            heading {
+                heading: Still Cold
+                alignment: end
+            }
+            layout {
+                sequence: 20
+                columnAlignment: end
+            }
+        )
+
+    )
+
+    region root-cause-and-impact (
+        name: Root cause and impact
+        type: plugin/graphVisualization
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT *
+                FROM   GRAPH_TABLE (
+                        dh_network
+                        MATCH (s IS asset WHERE s.asset_id = :P3_ASSET_ID)
+                           -[e IS supplies WHERE e.valve_state = 'OPEN']->{1,4}
+                           (b IS asset WHERE b.asset_type = 'BUILDING')
+                        ONE ROW PER STEP (v1, st, v2)
+                        COLUMNS (VERTEX_ID(v1) AS id_a, EDGE_ID(st) AS id_e, VERTEX_ID(v2) AS id_b))
+                UNION
+                SELECT *
+                FROM   GRAPH_TABLE (
+                        dh_network
+                        MATCH (an IS anomaly WHERE an.status <> 'CLOSED') -[d IS detected_on]-> (s IS asset WHERE s.asset_id = :P3_ASSET_ID)
+                        COLUMNS (VERTEX_ID(an) AS id_a, EDGE_ID(d) AS id_e, VERTEX_ID(s) AS id_b))
+                UNION
+                SELECT *
+                FROM   GRAPH_TABLE (
+                        dh_network
+                        MATCH (w IS work_order WHERE w.status IN ('NEW', 'PLANNED')) -[t IS targets]-> (s IS asset WHERE s.asset_id = :P3_ASSET_ID)
+                        COLUMNS (VERTEX_ID(w) AS id_a, EDGE_ID(t) AS id_e, VERTEX_ID(s) AS id_b))
+                
+                
+                ```
+            pageItemsToSubmit: P3_ASSET_ID
+        }
+        layout {
+            sequence: 30
+            slot: body
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-expanded
+                t-Region--scrollBody
+            ]
+        }
+        advanced {
+            htmlDomId: incident_graph
+        }
+        settings {
+            displaySize: 100
+            liveSearch: true
+        }
+        plugin-appearance {
+            height2: 500
+            sizeMode: compact
+            edgeMarker: arrow
+            defaultValuesForModes: enableFitToScreen
+            display: [
+                modes
+                exploration
+            ]
+            modesOptions: [
+                interaction
+                fitToScreen
+                sticky
+                evolution
+            ]
+            explorationOptions: [
+                expand
+                focus
+                group
+                ungroup
+                drop
+                undo
+                redo
+                reset
+            ]
+        }
+        plugin-layout {
+            layout: hierarchical
+            rankDirection: topToBottom
+            ranker: longestPath
+        }
+        plugin-advanced {
+            baseStyles:
+                ```
+                {
+                  "vertex": { "size": 10, "color": "#7FA65F",
+                              "label": { "text": "${properties.ASSET_ID}", "angle": 270, "d": 4, "font": { "size": 20 }, "color": "#7FA65F" },
+                              "border": { "color": "#FFFFFF", "width": 1 } },
+                  "edge":   { "width": 2, "color": "#9B9B9B" }
+                }
+                ```
+            ruleBasedStyles:
+                ```
+                [
+                {"legendTitle":"Heat plant","component":"vertex","target":"vertex","stylingEnabled":true,"conditions":{"operator":"and","conditions":[{"property":"ASSET_TYPE","operator":"=","value":"PLANT"}]},"style":{"color":"#8E44AD","size":30,"icon":{"class":"fa-fire","color":"#FFFFFF"},"label":{"text":"${properties.ASSET_ID}","angle":270,"d":4,"font":{"size":20},"color":"#8E44AD"}}},
+                {"legendTitle":"Pump station","component":"vertex","target":"vertex","stylingEnabled":true,"conditions":{"operator":"and","conditions":[{"property":"ASSET_TYPE","operator":"=","value":"PUMP_STATION"}]},"style":{"color":"#2C3E50","size":24,"icon":{"class":"fa-cog","color":"#FFFFFF"},"label":{"text":"${properties.ASSET_ID}","angle":270,"d":4,"font":{"size":20},"color":"#2C3E50"}}},
+                {"legendTitle":"Substation","component":"vertex","target":"vertex","stylingEnabled":true,"conditions":{"operator":"and","conditions":[{"property":"ASSET_TYPE","operator":"=","value":"SUBSTATION"}]},"style":{"color":"#8D6E63","size":18,"label":{"text":"${properties.ASSET_ID}","angle":270,"d":4,"font":{"size":20},"color":"#8D6E63"}}},
+                {"legendTitle":"Building","component":"vertex","target":"vertex","stylingEnabled":true,"conditions":{"operator":"and","conditions":[{"property":"ASSET_TYPE","operator":"=","value":"BUILDING"}]},"style":{"color":"#7FA65F","size":12,"label":{"text":"${properties.ASSET_ID}","angle":270,"d":4,"font":{"size":20},"color":"#7FA65F"}}},
+                {"legendTitle":"Alarm (flashing)","component":"vertex","target":"vertex","stylingEnabled":true,"conditions":{"operator":"and","conditions":[{"property":"HEALTH_STATUS","operator":"=","value":"ALARM"}]},"animations":[[{"duration":1.2,"timingFunction":"ease-in-out","keyFrames":[{"percentage":0,"style":{"opacity":1}},{"percentage":50,"style":{"opacity":0.25}},{"percentage":100,"style":{"opacity":1}}]}]],"style":{"color":"#C74634","label":{"text":"${properties.ASSET_ID}","angle":270,"d":4,"font":{"size":20},"color":"#C74634"}}},
+                {"legendTitle":"Warning","component":"vertex","target":"vertex","stylingEnabled":true,"conditions":{"operator":"and","conditions":[{"property":"HEALTH_STATUS","operator":"=","value":"WARNING"}]},"style":{"color":"#F0AB00","label":{"text":"${properties.ASSET_ID}","angle":270,"d":4,"font":{"size":20},"color":"#F0AB00"}}},
+                {"legendTitle":"Watch (predicted)","component":"vertex","target":"vertex","stylingEnabled":true,"conditions":{"operator":"and","conditions":[{"property":"HEALTH_STATUS","operator":"=","value":"WATCH"}]},"style":{"color":"#D63384","label":{"text":"${properties.ASSET_ID}","angle":270,"d":4,"font":{"size":20},"color":"#D63384"}}},
+                {"legendTitle":"Bypass (closed)","component":"edge","target":"edge","stylingEnabled":true,"conditions":{"operator":"and","conditions":[{"property":"VALVE_STATE","operator":"=","value":"CLOSED"}]},"style":{"color":"#5F96AE"}},
+                {"legendTitle":"Anomaly","component":"vertex","target":"vertex","stylingEnabled":true,"conditions":{"operator":"and","conditions":[{"property":"ANOMALY_ID","operator":">","value":0}]},"style":{"color":"#C74634","size":16,"icon":{"class":"fa-exclamation-triangle","color":"#FFFFFF"},"label":{"text":"${properties.ANOMALY_TYPE}","angle":270,"d":4,"font":{"size":20},"color":"#C74634"}}},
+                {"legendTitle":"Work order","component":"vertex","target":"vertex","stylingEnabled":true,"conditions":{"operator":"and","conditions":[{"property":"WO_ID","operator":">","value":0}]},"style":{"color":"#16A085","size":16,"icon":{"class":"fa-wrench","color":"#FFFFFF"},"label":{"text":"WO ${properties.WO_ID} ${properties.PRIORITY}","angle":270,"d":4,"font":{"size":20},"color":"#16A085"}}}
+                ]
+                
+                ```
+        }
+
+        column ID_A (
+            source {
+                dataType: CLOB
+            }
+            layout {
+                sequence: 10
+            }
+        )
+
+        column ID_B (
+            source {
+                dataType: CLOB
+            }
+            layout {
+                sequence: 30
+            }
+        )
+
+        column ID_E (
+            source {
+                dataType: CLOB
+            }
+            layout {
+                sequence: 20
+            }
+        )
+
+    )
+
+    pageItem P3_ASSET_ID (
+        type: selectList
+        label {
+            label: Asset
+            alignment: left
+        }
+        settings {
+            pageActionOnSelection: submitPage
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT asset_id || ' ' || name || ' (' || health_status || ')' AS d, asset_id AS r
+                FROM   dh_assets
+                WHERE  asset_type IN ('PUMP_STATION', 'SUBSTATION')
+                ORDER  BY DECODE(health_status, 'ALARM', 1, 'WARNING', 2, 'WATCH', 3, 4), asset_id
+                
+                ```
+        }
+        layout {
+            sequence: 10
+            region: @incident
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+        default {
+            type: functionBody
+            plsqlFunctionBody: "RETURN NVL(JSON_VALUE(agent_find_root_cause(), '$.incidents[0].root_cause_asset'), 'PS-04');"
+        }
+    )
+
+    pageItem P3_WO (
+        type: hidden
+        layout {
+            sequence: 20
+            region: @incident
+            slot: regionBody
+        }
+    )
+
+    button close-byp (
+        buttonName: CLOSE_BYP1
+        label: Close BYP-1
+        layout {
+            sequence: 40
+            region: @incident
+            slot: next
+        }
+        appearance {
+            buttonTemplate: @/text-with-icon
+            templateOptions: [
+                #DEFAULT#
+                t-Button--iconLeft
+            ]
+            icon: fa-lock
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+        serverSideCondition {
+            type: rowsReturned
+            sqlQuery: SELECT 1 FROM dh_pipes WHERE pipe_id = 'BYP-1' AND valve_state = 'OPEN'
+        }
+    )
+
+    button create-wo (
+        buttonName: CREATE_WO
+        label: Create work order
+        layout {
+            sequence: 50
+            region: @incident
+            slot: next
+        }
+        appearance {
+            buttonTemplate: @/text-with-icon
+            templateOptions: [
+                #DEFAULT#
+                t-Button--iconLeft
+            ]
+            icon: fa-wrench
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    button open-byp (
+        buttonName: OPEN_BYP1
+        label: Open BYP-1
+        layout {
+            sequence: 30
+            region: @incident
+            slot: next
+        }
+        appearance {
+            buttonTemplate: @/text-with-icon
+            hot: true
+            templateOptions: [
+                #DEFAULT#
+                t-Button--iconLeft
+            ]
+            icon: fa-unlock
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+        serverSideCondition {
+            type: rowsReturned
+            sqlQuery: SELECT 1 FROM dh_pipes WHERE pipe_id = 'BYP-1' AND valve_state = 'CLOSED'
+        }
+    )
+
+    process close-byp (
+        name: Close BYP-1
+        type: executeCode
+        source {
+            plsqlCode: dh_set_valve('BYP-1', 'CLOSED');
+        }
+        execution {
+            sequence: 20
+        }
+        successMessage {
+            successMessage: BYP-1 is closed.
+        }
+        error {
+            errorMessage: Closing BYP-1 failed.
+        }
+        advanced {
+            executionMappingIdentifier: 15971174451061714
+        }
+        serverSideCondition {
+            whenButtonPressed: @close-byp
+        }
+    )
+
+    process create-work-order (
+        name: Create work order
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                DECLARE
+                  l_json CLOB;
+                BEGIN
+                  l_json := dh_graph_api.create_work_order(
+                              p_asset_id   => :P3_ASSET_ID,
+                              p_priority   => 'P1',
+                              p_title      => 'Repair ' || :P3_ASSET_ID,
+                              p_details    => 'Created from APEX page 3',
+                              p_created_by => 'APEX');
+                  :P3_WO := JSON_VALUE(l_json, '$.wo_id');
+                  IF :P3_WO IS NULL THEN
+                    RAISE_APPLICATION_ERROR(-20001, JSON_VALUE(l_json, '$.error'));
+                  END IF;
+                END;
+                
+                ```
+        }
+        execution {
+            sequence: 30
+        }
+        successMessage {
+            successMessage: Work order &P3_WO. created for &P3_ASSET_ID..
+        }
+        error {
+            errorMessage: The work order could not be created.
+        }
+        advanced {
+            executionMappingIdentifier: 15971258405061715
+        }
+        serverSideCondition {
+            whenButtonPressed: @create-wo
+        }
+    )
+
+    process open-byp (
+        name: Open BYP-1
+        type: executeCode
+        source {
+            plsqlCode: dh_set_valve('BYP-1', 'OPEN');
+        }
+        execution {
+            sequence: 10
+        }
+        successMessage {
+            successMessage: BYP-1 is open. The supply returns within about 1.5 minutes.
+        }
+        error {
+            errorMessage: Opening BYP-1 failed.
+        }
+        advanced {
+            executionMappingIdentifier: 15970995456061712
+        }
+        serverSideCondition {
+            whenButtonPressed: @open-byp
+        }
+    )
+
+    branch (
+        name: Back to page 3
+        execution {
+            sequence: 10
+        }
+        behavior {
+            target: {
+                page: 3
+            }
+        }
+    )
+
+)
+

@@ -1,0 +1,1099 @@
+page 4 (
+    name: Asset
+    alias: ASSET
+    title: Asset
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    javaScript {
+        executeWhenPageLoads:
+            ```javascript-browser
+            setInterval(function () {
+              if (document.hidden) { return; }                       // tab in the background
+              ["chart6h", "anomalies4"].forEach(function (id) {
+                var r = apex.region(id);
+                if (!r || !r.element.is(":visible")) { return; }     // missing or collapsed region
+                try { r.refresh(); } catch (e) { apex.debug.warn("refresh " + id + ": " + e.message); }
+              });
+            }, 30000);
+            
+            ```
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region asset (
+        name: Asset
+        type: staticContent
+        layout {
+            sequence: 10
+            slot: body
+            columnSpan: 2
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+    )
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/title-bar
+            templateOptions: [
+                #DEFAULT#
+                t-BreadcrumbRegion--useBreadcrumbTitle
+            ]
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region details (
+        name: Details
+        type: classicReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT s.name                         AS "Name",
+                       s.type_name                    AS "Type",
+                       s.district                     AS "District",
+                       a.equipment                    AS "Equipment",
+                       a.rated_kw                     AS "Rated power (kW)",
+                       a.install_year                 AS "Installed",
+                       s.criticality                  AS "Criticality (1-5)",
+                       s.health_status                AS "Health",
+                       s.health_reason                AS "Reason",
+                       s.health_color                 AS health_color
+                FROM   dh_asset_status_v s
+                JOIN   dh_assets a ON a.asset_id = s.asset_id
+                WHERE  s.asset_id = :P4_ASSET_ID
+                ```
+            pageItemsToSubmit: P4_ASSET_ID
+        }
+        layout {
+            sequence: 20
+            slot: body
+            startNewRow: false
+            columnSpan: 10
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+        componentAppearance {
+            template: @/value-attribute-pairs-column
+            templateOptions: [
+                #DEFAULT#
+                t-AVPList--leftAligned
+            ]
+        }
+        pagination {
+            type: nextAndPreviousLinks
+        }
+
+        column "Criticality (1-5)" (
+            reportColumnQueryId: 7
+            derivedColumn: N
+            heading {
+                heading: Criticality (1-5)
+                alignment: end
+            }
+            layout {
+                sequence: 70
+                columnAlignment: end
+            }
+        )
+
+        column District (
+            reportColumnQueryId: 3
+            derivedColumn: N
+            heading {
+                heading: District
+            }
+            layout {
+                sequence: 30
+            }
+        )
+
+        column Equipment (
+            reportColumnQueryId: 4
+            derivedColumn: N
+            heading {
+                heading: Equipment
+            }
+            layout {
+                sequence: 40
+            }
+        )
+
+        column HEALTH_COLOR (
+            reportColumnQueryId: 10
+            derivedColumn: N
+            type: hidden
+            layout {
+                sequence: 100
+            }
+        )
+
+        column Health (
+            reportColumnQueryId: 8
+            derivedColumn: N
+            heading {
+                heading: Health
+            }
+            layout {
+                sequence: 80
+            }
+            columnFormatting {
+                htmlExpression: <span style="color:#HEALTH_COLOR#; font-weight:bold">#Health#</span>
+            }
+        )
+
+        column Installed (
+            reportColumnQueryId: 6
+            derivedColumn: N
+            heading {
+                heading: Installed
+                alignment: end
+            }
+            layout {
+                sequence: 60
+                columnAlignment: end
+            }
+        )
+
+        column Name (
+            reportColumnQueryId: 1
+            derivedColumn: N
+            heading {
+                heading: Name
+            }
+            layout {
+                sequence: 10
+            }
+        )
+
+        column "Rated power (kW)" (
+            reportColumnQueryId: 5
+            derivedColumn: N
+            heading {
+                heading: Rated Power (kw)
+                alignment: end
+            }
+            layout {
+                sequence: 50
+                columnAlignment: end
+            }
+        )
+
+        column Reason (
+            reportColumnQueryId: 9
+            derivedColumn: N
+            heading {
+                heading: Reason
+            }
+            layout {
+                sequence: 90
+            }
+        )
+
+        column Type (
+            reportColumnQueryId: 2
+            derivedColumn: N
+            heading {
+                heading: Type
+            }
+            layout {
+                sequence: 20
+            }
+        )
+
+    )
+
+    region last-6-hours (
+        name: Last 6 hours
+        title: &P4_METRIC_NAME. (&P4_UNIT.) – last 6 hours
+        type: chart
+        layout {
+            sequence: 30
+            slot: body
+            columnSpan: 12
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-expanded
+                t-Region--scrollBody
+            ]
+        }
+        advanced {
+            htmlDomId: chart6h
+        }
+        chart {
+            type: line
+        }
+        chartLayout {
+            height: 400
+        }
+        legend {
+            position: bottom
+        }
+
+        series alarm-limit (
+            name: Alarm limit (&P4_LIMIT_KIND.)
+            execution {
+                sequence: 30
+            }
+            source {
+                type: sqlQuery
+                sqlQuery: SELECT ts_local, TO_NUMBER(:P4_ALARM) AS value FROM dh_telemetry_recent_v WHERE asset_id = :P4_ASSET_ID AND metric = :P4_METRIC ORDER BY ts_local
+                pageItemsToSubmit: [
+                    P4_ASSET_ID
+                    P4_METRIC
+                    P4_WARN
+                    P4_ALARM
+                ]
+            }
+            columnMapping {
+                label: TS_LOCAL
+                value: VALUE
+            }
+            appearance {
+                color: #c74634
+            }
+            line {
+                style: dashed
+            }
+            marker {
+                show: false
+            }
+        )
+
+        series p4-metric-name (
+            name: &P4_METRIC_NAME.
+            execution {
+                sequence: 10
+            }
+            source {
+                type: sqlQuery
+                sqlQuery: SELECT ts_local, value FROM dh_telemetry_recent_v WHERE asset_id = :P4_ASSET_ID AND metric = :P4_METRIC ORDER BY ts_local
+                pageItemsToSubmit: [
+                    P4_ASSET_ID
+                    P4_METRIC
+                    P4_WARN
+                    P4_ALARM
+                ]
+            }
+            columnMapping {
+                label: TS_LOCAL
+                value: VALUE
+            }
+            appearance {
+                color: #2c3e50
+            }
+            marker {
+                show: false
+            }
+        )
+
+        series warning-limit (
+            name: Warning limit (&P4_LIMIT_KIND.)
+            execution {
+                sequence: 20
+            }
+            source {
+                type: sqlQuery
+                sqlQuery: SELECT ts_local, TO_NUMBER(:P4_WARN) AS value FROM dh_telemetry_recent_v WHERE asset_id = :P4_ASSET_ID AND metric = :P4_METRIC ORDER BY ts_local
+                pageItemsToSubmit: [
+                    P4_ASSET_ID
+                    P4_METRIC
+                    P4_WARN
+                    P4_ALARM
+                ]
+            }
+            columnMapping {
+                label: TS_LOCAL
+                value: VALUE
+            }
+            appearance {
+                color: #f0ab00
+            }
+            line {
+                style: dashed
+            }
+            marker {
+                show: false
+            }
+        )
+
+        axis x (
+            name: x
+            minorTicks {
+                show: false
+            }
+        )
+
+        axis y (
+            name: y
+            value {
+                format: decimal
+                decimalPlaces: 0
+                formatScaling: none
+            }
+            minorTicks {
+                show: false
+            }
+        )
+
+    )
+
+    region last-7-days (
+        name: Last 7 days
+        title: &P4_METRIC_NAME. (&P4_UNIT.) – last 7 days, hourly average
+        type: chart
+        layout {
+            sequence: 40
+            slot: body
+            columnSpan: 12
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-expanded
+                t-Region--scrollBody
+            ]
+        }
+        advanced {
+            htmlDomId: chart7d
+        }
+        chart {
+            type: line
+        }
+        chartLayout {
+            height: 400
+        }
+        legend {
+            position: bottom
+        }
+
+        series alarm-limit (
+            name: Alarm limit (&P4_LIMIT_KIND.)
+            execution {
+                sequence: 30
+            }
+            source {
+                type: sqlQuery
+                sqlQuery:
+                    ```sql
+                    SELECT TRUNC(CAST(FROM_TZ(ts, 'UTC') AT LOCAL AS DATE), 'HH24') AS hour, TO_NUMBER(:P4_ALARM) AS value
+                    FROM   dh_telemetry
+                    WHERE  asset_id = :P4_ASSET_ID AND metric = :P4_METRIC
+                    AND    ts > SYS_EXTRACT_UTC(SYSTIMESTAMP) - INTERVAL '7' DAY
+                    GROUP  BY TRUNC(CAST(FROM_TZ(ts, 'UTC') AT LOCAL AS DATE), 'HH24')
+                    ORDER  BY 1
+                    ```
+                pageItemsToSubmit: [
+                    P4_ASSET_ID
+                    P4_METRIC
+                    P4_WARN
+                    P4_ALARM
+                ]
+            }
+            columnMapping {
+                label: HOUR
+                value: VALUE
+            }
+            appearance {
+                color: #c74634
+            }
+            line {
+                style: dashed
+            }
+            marker {
+                show: false
+            }
+        )
+
+        series p4-metric-name (
+            name: &P4_METRIC_NAME.
+            execution {
+                sequence: 10
+            }
+            source {
+                type: sqlQuery
+                sqlQuery:
+                    ```sql
+                    SELECT TRUNC(CAST(FROM_TZ(ts, 'UTC') AT LOCAL AS DATE), 'HH24') AS hour, ROUND(AVG(value), 2) AS value
+                    FROM   dh_telemetry
+                    WHERE  asset_id = :P4_ASSET_ID AND metric = :P4_METRIC
+                    AND    ts > SYS_EXTRACT_UTC(SYSTIMESTAMP) - INTERVAL '7' DAY
+                    GROUP  BY TRUNC(CAST(FROM_TZ(ts, 'UTC') AT LOCAL AS DATE), 'HH24')
+                    ORDER  BY 1
+                    ```
+            }
+            columnMapping {
+                label: HOUR
+                value: VALUE
+            }
+            appearance {
+                color: #2c3e50
+            }
+            marker {
+                show: false
+            }
+        )
+
+        series warning-limit (
+            name: Warning limit (&P4_LIMIT_KIND.)
+            execution {
+                sequence: 20
+            }
+            source {
+                type: sqlQuery
+                sqlQuery:
+                    ```sql
+                    -- Series 1: hourly average of the readings (local time)
+                    SELECT TRUNC(CAST(FROM_TZ(ts, 'UTC') AT LOCAL AS DATE), 'HH24') AS hour, TO_NUMBER(:P4_WARN) AS value
+                    FROM   dh_telemetry
+                    WHERE  asset_id = :P4_ASSET_ID AND metric = :P4_METRIC
+                    AND    ts > SYS_EXTRACT_UTC(SYSTIMESTAMP) - INTERVAL '7' DAY
+                    GROUP  BY TRUNC(CAST(FROM_TZ(ts, 'UTC') AT LOCAL AS DATE), 'HH24')
+                    ORDER  BY 1
+                    ```
+                pageItemsToSubmit: [
+                    P4_ASSET_ID
+                    P4_METRIC
+                    P4_WARN
+                    P4_ALARM
+                ]
+            }
+            columnMapping {
+                label: HOUR
+                value: VALUE
+            }
+            appearance {
+                color: #f0ab00
+            }
+            line {
+                style: dashed
+            }
+            marker {
+                show: false
+            }
+        )
+
+        axis x (
+            name: x
+            minorTicks {
+                show: false
+            }
+        )
+
+        axis y (
+            name: y
+            value {
+                format: decimal
+                decimalPlaces: 0
+                formatScaling: none
+            }
+            minorTicks {
+                show: false
+            }
+        )
+
+    )
+
+    region maintenance (
+        name: Maintenance
+        type: classicReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                -- Maintenance (No data found: "No maintenance recorded.")
+                SELECT performed_on   AS "Date",
+                       maint_type     AS "Type",
+                       description    AS "Description",
+                       downtime_hours AS "Downtime (h)"
+                FROM   dh_maintenance
+                WHERE  asset_id = :P4_ASSET_ID
+                ORDER  BY performed_on DESC
+                ```
+            pageItemsToSubmit: P4_ASSET_ID
+        }
+        layout {
+            sequence: 70
+            slot: body
+            columnSpan: 12
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-expanded
+                t-Region--scrollBody
+            ]
+        }
+        componentAppearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Report--altRowsDefault
+                t-Report--rowHighlight
+            ]
+        }
+        pagination {
+            type: nextAndPreviousLinks
+        }
+        messages {
+            whenNoDataFound: No maintenance recorded.
+        }
+
+        column Date (
+            reportColumnQueryId: 1
+            derivedColumn: N
+            heading {
+                heading: Date
+            }
+            layout {
+                sequence: 10
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column Description (
+            reportColumnQueryId: 3
+            derivedColumn: N
+            heading {
+                heading: Description
+            }
+            layout {
+                sequence: 30
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column "Downtime (h)" (
+            reportColumnQueryId: 4
+            derivedColumn: N
+            heading {
+                heading: Downtime (h)
+                alignment: end
+            }
+            layout {
+                sequence: 40
+                columnAlignment: end
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column Type (
+            reportColumnQueryId: 2
+            derivedColumn: N
+            heading {
+                heading: Type
+            }
+            layout {
+                sequence: 20
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+    )
+
+    region open-anomalies (
+        name: Open anomalies
+        type: classicReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                -- Open anomalies (No data found: "No open anomalies.")
+                SELECT detected_local    AS "Detected",
+                       anomaly_type_name AS "Type",
+                       severity          AS "Severity",
+                       metric            AS "Metric",
+                       details           AS "Details",
+                       hours_to_alarm    AS "Hours to alarm"
+                FROM   dh_open_anomalies_v
+                WHERE  asset_id = :P4_ASSET_ID
+                ORDER  BY detected_local DESC
+                
+                ```
+            pageItemsToSubmit: P4_ASSET_ID
+        }
+        layout {
+            sequence: 50
+            slot: body
+            columnSpan: 6
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-expanded
+                t-Region--scrollBody
+            ]
+        }
+        advanced {
+            htmlDomId: anomalies4
+        }
+        componentAppearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Report--altRowsDefault
+                t-Report--rowHighlight
+            ]
+        }
+        pagination {
+            type: nextAndPreviousLinks
+        }
+        messages {
+            whenNoDataFound: No open anomalies.
+        }
+
+        column Details (
+            reportColumnQueryId: 5
+            derivedColumn: N
+            heading {
+                heading: Details
+            }
+            layout {
+                sequence: 50
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column Detected (
+            reportColumnQueryId: 1
+            derivedColumn: N
+            heading {
+                heading: Detected
+            }
+            layout {
+                sequence: 10
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column "Hours to alarm" (
+            reportColumnQueryId: 6
+            derivedColumn: N
+            heading {
+                heading: Hours To Alarm
+                alignment: end
+            }
+            layout {
+                sequence: 60
+                columnAlignment: end
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column Metric (
+            reportColumnQueryId: 4
+            derivedColumn: N
+            heading {
+                heading: Metric
+            }
+            layout {
+                sequence: 40
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column Severity (
+            reportColumnQueryId: 3
+            derivedColumn: N
+            heading {
+                heading: Severity
+            }
+            layout {
+                sequence: 30
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column Type (
+            reportColumnQueryId: 2
+            derivedColumn: N
+            heading {
+                heading: Type
+            }
+            layout {
+                sequence: 20
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+    )
+
+    region work-orders (
+        name: Work orders
+        type: classicReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                -- Work orders (No data found: "No work orders.")
+                SELECT wo_id      AS "No.",
+                       created_at AS "Created",
+                       priority   AS "Priority",
+                       title      AS "Title",
+                       status     AS "Status",
+                       created_by AS "Created by"
+                FROM   dh_work_orders
+                WHERE  asset_id = :P4_ASSET_ID
+                ORDER  BY wo_id DESC
+                
+                ```
+            pageItemsToSubmit: P4_ASSET_ID
+        }
+        layout {
+            sequence: 60
+            slot: body
+            startNewRow: false
+            columnSpan: 6
+        }
+        appearance {
+            template: @/collapsible
+            templateOptions: [
+                #DEFAULT#
+                is-expanded
+                t-Region--scrollBody
+            ]
+        }
+        componentAppearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Report--altRowsDefault
+                t-Report--rowHighlight
+            ]
+        }
+        pagination {
+            type: nextAndPreviousLinks
+        }
+        messages {
+            whenNoDataFound: No work orders.
+        }
+
+        column Created (
+            reportColumnQueryId: 2
+            derivedColumn: N
+            heading {
+                heading: Created
+            }
+            layout {
+                sequence: 20
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column "Created by" (
+            reportColumnQueryId: 6
+            derivedColumn: N
+            heading {
+                heading: Created By
+            }
+            layout {
+                sequence: 60
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column No. (
+            reportColumnQueryId: 1
+            derivedColumn: N
+            heading {
+                heading: No.
+                alignment: end
+            }
+            layout {
+                sequence: 10
+                columnAlignment: end
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column Priority (
+            reportColumnQueryId: 3
+            derivedColumn: N
+            heading {
+                heading: Priority
+            }
+            layout {
+                sequence: 30
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column Status (
+            reportColumnQueryId: 5
+            derivedColumn: N
+            heading {
+                heading: Status
+            }
+            layout {
+                sequence: 50
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+        column Title (
+            reportColumnQueryId: 4
+            derivedColumn: N
+            heading {
+                heading: Title
+            }
+            layout {
+                sequence: 40
+            }
+            sorting {
+                sortable: false
+            }
+        )
+
+    )
+
+    pageItem P4_ALARM (
+        type: hidden
+        layout {
+            sequence: 60
+            region: @asset
+            slot: regionBody
+        }
+    )
+
+    pageItem P4_ASSET_ID (
+        type: selectList
+        label {
+            label: Asset
+            alignment: left
+        }
+        settings {
+            pageActionOnSelection: submitPage
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT asset_id || ' ' || name || ' (' || health_status || ')' AS d, asset_id AS r
+                FROM   dh_assets
+                WHERE  asset_type IN ('PUMP_STATION', 'SUBSTATION')
+                ORDER  BY asset_id
+                ```
+            displayExtraValues: false
+            displayNullValue: false
+        }
+        layout {
+            sequence: 10
+            region: @asset
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    pageItem P4_LIMIT_KIND (
+        type: hidden
+        layout {
+            sequence: 80
+            slot: body
+        }
+    )
+
+    pageItem P4_METRIC (
+        type: selectList
+        label {
+            label: Metric
+            alignment: left
+        }
+        settings {
+            pageActionOnSelection: submitPage
+        }
+        lov {
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT m.display_name || ' (' || m.unit || ')' AS d, m.metric AS r
+                FROM   dh_metrics m
+                JOIN   dh_assets a ON a.asset_type = m.asset_type
+                WHERE  a.asset_id = :P4_ASSET_ID
+                ORDER  BY m.display_name
+                ```
+        }
+        layout {
+            sequence: 20
+            region: @asset
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+    )
+
+    pageItem P4_METRIC_NAME (
+        type: hidden
+        layout {
+            sequence: 30
+            region: @asset
+            slot: regionBody
+        }
+    )
+
+    pageItem P4_UNIT (
+        type: hidden
+        layout {
+            sequence: 40
+            region: @asset
+            slot: regionBody
+        }
+    )
+
+    pageItem P4_WARN (
+        type: hidden
+        layout {
+            sequence: 50
+            region: @asset
+            slot: regionBody
+        }
+    )
+
+    button incident (
+        buttonName: INCIDENT
+        label: Incident view
+        layout {
+            sequence: 70
+            region: @asset
+            slot: next
+        }
+        appearance {
+            buttonTemplate: @/text-with-icon
+            templateOptions: [
+                #DEFAULT#
+                t-Button--iconLeft
+            ]
+            icon: fa-alert
+        }
+        behavior {
+            action: redirectThisApp
+            target: {
+                page: 3
+                items: {
+                    P3_ASSET_ID: &P4_ASSET_ID.
+                }
+            }
+            warnOnUnsavedChanges: doNotCheck
+        }
+    )
+
+    process set-asset-and-metric (
+        name: Set asset and metric
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                DECLARE
+                  l_type dh_assets.asset_type%TYPE;
+                  l_n    PLS_INTEGER;
+                BEGIN
+                  :P4_ASSET_ID := NVL(:P4_ASSET_ID, 'PS-04');
+                  SELECT asset_type INTO l_type FROM dh_assets WHERE asset_id = :P4_ASSET_ID;
+                
+                  -- keep the metric if the asset type has it, else the default metric of the type
+                  SELECT COUNT(*) INTO l_n FROM dh_metrics WHERE asset_type = l_type AND metric = :P4_METRIC;
+                  IF l_n = 0 THEN
+                    :P4_METRIC := CASE l_type WHEN 'PUMP_STATION' THEN 'vibration' ELSE 't_sec' END;
+                  END IF;
+                
+                  -- name, unit and limits for chart titles and limit lines (high limits, else low limits)
+                   SELECT display_name, unit, COALESCE(warn_high, warn_low), COALESCE(alarm_high, alarm_low),
+                          CASE WHEN COALESCE(warn_high, alarm_high) IS NOT NULL THEN 'max'
+                               WHEN COALESCE(warn_low,  alarm_low)  IS NOT NULL THEN 'min' END
+                   INTO   :P4_METRIC_NAME, :P4_UNIT, :P4_WARN, :P4_ALARM, :P4_LIMIT_KIND
+                   FROM   dh_metrics
+                   WHERE  asset_type = l_type AND metric = :P4_METRIC;
+                END;
+                
+                ```
+        }
+        execution {
+            sequence: 10
+            point: beforeHeader
+        }
+        advanced {
+            executionMappingIdentifier: 15973351407061736
+        }
+    )
+
+)
+

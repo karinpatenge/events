@@ -1,0 +1,529 @@
+plugin graphVisualization (
+    name: Graph Visualization
+    staticId: GRAPHVIZ
+    type: region
+    component {
+        standardAttributes: [
+            regionSourceSupportsDifferentDataSources
+            pageItemsToSubmitAttr
+            regionColumns
+            escapeSpecialCharsColumnAttr
+        ]
+    }
+    source {
+        plsqlCode:
+            ```plsql
+              PROCEDURE update_json_obj (
+                c_json_object IN OUT json_object_t,
+                key           IN VARCHAR2,
+                value         IN VARCHAR2,
+                add_as_json   IN BOOLEAN DEFAULT FALSE
+              ) IS
+              BEGIN
+                IF value IS NOT NULL THEN
+                  IF add_as_json THEN
+                    c_json_object.put(key, json_array_t.parse(value));
+                  ELSE
+                    c_json_object.put(key, value);
+                  END IF;
+                END IF;
+              EXCEPTION
+                WHEN OTHERS THEN
+                  apex_error.add_error(
+                    'Please reformat: ' || apex_escape.html(value),
+                    p_display_location => apex_error.c_inline_in_notification
+                  );
+              END update_json_obj;
+              PROCEDURE update_json_obj (
+                c_json_object IN OUT json_object_t,
+                key           IN VARCHAR2,
+                value         IN NUMBER
+              ) IS
+              BEGIN
+                IF value IS NOT NULL THEN
+                  c_json_object.put(key, value);
+                END IF;
+              END update_json_obj;
+              PROCEDURE update_json_obj (
+                c_json_object IN OUT json_object_t,
+                key           IN VARCHAR2,
+                value         IN BOOLEAN
+              ) IS
+              BEGIN
+                c_json_object.put(key, value);
+              END update_json_obj;
+              PROCEDURE render (
+                p_plugin IN apex_plugin.t_plugin,
+                p_region IN apex_plugin.t_region,
+                p_param  IN apex_plugin.t_region_render_param,
+                p_result IN OUT NOCOPY apex_plugin.t_region_render_result
+              ) IS
+                c_id                            CONSTANT VARCHAR2(255) := apex_escape.html_attribute(p_region.static_id) || '-container';
+                c_template_settings             CONSTANT p_plugin.attribute_01%TYPE := apex_plugin_util.replace_substitutions(p_plugin.attributes.get_varchar2('attribute_01'), FALSE);
+                c_template_styles               CONSTANT p_plugin.attribute_02%TYPE := apex_plugin_util.replace_substitutions(p_plugin.attributes.get_varchar2('attribute_02'), FALSE);
+                c_settings                      CONSTANT p_region.attribute_02%TYPE := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('attribute_02'), FALSE);
+                c_layout                        CONSTANT p_region.attribute_04%TYPE := p_region.attributes.get_varchar2('attribute_04');
+                c_group_edges                   CONSTANT p_region.attribute_05%TYPE := p_region.attributes.get_varchar2('attribute_05');
+                c_display_size                  CONSTANT p_region.attribute_06%TYPE := p_region.attributes.get_varchar2('attribute_06');
+                c_vertex_label                  CONSTANT p_region.attribute_07%TYPE := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('attribute_07'), FALSE);
+                c_edge_label                    CONSTANT p_region.attribute_08%TYPE := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('attribute_08'), FALSE);
+                c_max_label_length              CONSTANT p_region.attribute_09%TYPE := p_region.attributes.get_varchar2('attribute_09');
+                c_display                       CONSTANT p_region.attribute_10%TYPE := p_region.attributes.get_varchar2('attribute_10');
+                c_expand                        CONSTANT p_region.attribute_11%TYPE := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('attribute_11'), FALSE);
+                c_fetch_actions                 CONSTANT p_region.attribute_12%TYPE := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('attribute_12'), FALSE);
+                c_persist                       CONSTANT p_region.attribute_13%TYPE := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('attribute_13'), FALSE);
+                c_display_size_control          CONSTANT p_region.attribute_14%TYPE := p_region.attributes.get_varchar2('attribute_14');
+                c_update_graph_data             CONSTANT p_region.attribute_15%TYPE := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('attribute_15'), FALSE);
+                c_height                        CONSTANT p_region.attribute_16%TYPE := p_region.attributes.get_varchar2('attribute_16');
+                c_update_rule_based_style       CONSTANT p_region.attribute_17%TYPE := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('attribute_17'), FALSE);
+                c_livesearch                    CHAR := p_region.attributes.get_varchar2('livesearch');
+                c_legendwidth                   NUMBER := p_region.attributes.get_varchar2('legendwidth');
+                c_spacing                       NUMBER := p_region.attributes.get_varchar2('spacing');
+                c_alphadecay                    NUMBER := p_region.attributes.get_varchar2('force_alphadecay');
+                c_velocitydecay                 NUMBER := p_region.attributes.get_varchar2('force_velocitydecay');
+                c_edgedistance                  NUMBER := p_region.attributes.get_varchar2('force_edgedistance');
+                c_vertexcharge                  NUMBER := p_region.attributes.get_varchar2('force_vertexcharge');
+                c_clusterenabled                CHAR := p_region.attributes.get_varchar2('force_clusterenabled');
+                c_clusterby                     VARCHAR2(4000) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('force_clusterby'), FALSE);
+                c_hideunclusteredvertices       CHAR := p_region.attributes.get_varchar2('force_hideunclusteredvertices');
+                c_settings_through_ui           json_object_t := json_object_t();
+                c_layout_settings               json_object_t := json_object_t();
+                c_clusteroptions                json_object_t := json_object_t();
+                c_evolution                     json_object_t := json_object_t();
+                c_tmp_json                      json_object_t := json_object_t();
+                c_schema_json                   CLOB;
+                c_gridrows                      NUMBER := p_region.attributes.get_varchar2('grid_rows');
+                c_gridcolumns                   NUMBER := p_region.attributes.get_varchar2('grid_columns');
+                c_hierarchical_rankdirection    CHAR(2) := p_region.attributes.get_varchar2('hierarchical_rankdirection');
+                c_hierarchical_ranker           VARCHAR2(4000) := p_region.attributes.get_varchar2('hierarchical_ranker');
+                c_hierarchical_vertexseparation NUMBER := p_region.attributes.get_varchar2('hierarchical_vertexseparation');
+                c_hierarchical_edgeseparation   NUMBER := p_region.attributes.get_varchar2('hierarchical_edgeseparation');
+                c_hierarchical_rankseparation   NUMBER := p_region.attributes.get_varchar2('hierarchical_rankseparation');
+                c_geo_longitude                 VARCHAR2(4000) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('geo_longitude'), FALSE);
+                c_geo_latitude                  VARCHAR2(4000) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('geo_latitude'), FALSE);
+                c_geo_appid                     VARCHAR2(4000) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('geo_appid'), FALSE);
+                c_geo_maptype                   VARCHAR2(4000) := p_region.attributes.get_varchar2('geo_maptype');
+                c_geo_showinfo                  CHAR := p_region.attributes.get_varchar2('geo_showinfo');
+                c_geo_shownavigation            CHAR := p_region.attributes.get_varchar2('geo_shownavigation');
+                c_geo_layers                    VARCHAR2(32767) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('geo_layers'), FALSE);
+                c_geo_sources                   VARCHAR2(32767) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('geo_sources'), FALSE);
+                c_geo_markers                   VARCHAR2(32767) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('geo_markers'), FALSE);
+                c_legend_state                  VARCHAR2(255) := p_region.attributes.get_varchar2('legend_state');
+                c_size_mode                     VARCHAR2(4000) := p_region.attributes.get_varchar2('size_mode');
+                c_evolution_height              NUMBER := p_region.attributes.get_varchar2('evolution_height');
+                c_evolution_chart               VARCHAR2(4000) := p_region.attributes.get_varchar2('evolution_chart');
+                c_evolution_granularity         NUMBER := p_region.attributes.get_varchar2('evolution_granularity');
+                c_evolution_unit                VARCHAR2(4000) := p_region.attributes.get_varchar2('evolution_unit');
+                c_evolution_vertex_start        VARCHAR2(4000) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('evolution_vertex_start'), FALSE);
+                c_evolution_vertex_end          VARCHAR2(4000) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('evolution_vertex_end'), FALSE);
+                c_evolution_edge_start          VARCHAR2(4000) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('evolution_edge_start'), FALSE);
+                c_evolution_edge_end            VARCHAR2(4000) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('evolution_edge_end'), FALSE);
+                c_evolution_exclude_values      VARCHAR2(32767) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('evolution_exclude_values'), FALSE);
+                c_evolution_exclude_show        CHAR := p_region.attributes.get_varchar2('evolution_exclude_show');
+                c_evolution_playback_step       NUMBER := p_region.attributes.get_varchar2('evolution_playback_step');
+                c_evolution_playback_timeout    NUMBER := p_region.attributes.get_varchar2('evolution_playback_timeout');
+                c_evolution_preservepositions   CHAR := p_region.attributes.get_varchar2('evolution_preservepositions');
+                c_evolution_labelformat         VARCHAR2(4000) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('evolution_labelformat'), FALSE);
+                c_evolution_axis                VARCHAR2(4000) := p_region.attributes.get_varchar2('evolution_axis');
+                c_evolution_enabled             CHAR := p_region.attributes.get_varchar2('enable_evolution');
+                c_showtitle                     CHAR := p_region.attributes.get_varchar2('showtitle');
+                c_escapehtml                    CHAR := p_region.attributes.get_varchar2('escapehtml');
+                c_tooltipcharlimit              NUMBER := p_region.attributes.get_varchar2('tooltipcharlimit');
+                c_dark_theme                    CHAR := p_region.attributes.get_varchar2('darktheme');
+                c_custom_theme                  CHAR := p_region.attributes.get_varchar2('custom_theme');
+                c_background_color              VARCHAR2(4000) := p_region.attributes.get_varchar2('background_color');
+                c_text_color                    VARCHAR2(4000) := p_region.attributes.get_varchar2('text_color');
+                c_modes_options                 VARCHAR2(4000) := p_region.attributes.get_varchar2('modes_options');
+                c_exploration_options           VARCHAR2(4000) := p_region.attributes.get_varchar2('exploration_options');
+                c_ajax_items_to_submit          VARCHAR2(32767) := apex_plugin_util.page_item_names_to_jquery(p_region.ajax_items_to_submit);
+                c_rule_based_styles             VARCHAR2(32767) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('rulebasedstyles'), FALSE);
+                c_base_styles                   VARCHAR2(32767) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('basestyles'), FALSE);
+                c_rule_based_groups             VARCHAR2(32767) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('rule_based_groups'), FALSE);
+                c_evolution_settings            VARCHAR2(32767) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('evolution'), FALSE);
+                c_schema_settings               VARCHAR2(32767) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('schema_settings'), FALSE);
+                c_defaults_for_modes            VARCHAR2(4000) := p_region.attributes.get_varchar2('defaults_for_modes');
+                c_graph_name                    VARCHAR2(4000) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('schema_graph_name'), FALSE);
+                c_graph_owner                   VARCHAR2(4000) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('schema_graph_owner'), FALSE);
+                c_visibility_toggle_mode        VARCHAR2(4000) := p_region.attributes.get_varchar2('visibility_toggle_mode');
+                c_search_function               VARCHAR2(32767) := apex_plugin_util.replace_substitutions(p_region.attributes.get_varchar2('searchvaluechanged'), FALSE);
+                c_enable_expand                 CHAR := p_region.attributes.get_varchar2('enable_expand');
+                c_number_of_hops                NUMBER := TO_NUMBER(p_region.attributes.get_varchar2('number_of_hops'));
+                c_max_hops                      NUMBER := TO_NUMBER(p_region.attributes.get_varchar2('max_number_of_hops'));
+                c_edge_marker                   VARCHAR2(4000) := p_region.attributes.get_varchar2('edgemarker');
+                c_default_legend_enabled        CHAR := p_region.attributes.get_varchar2('default_legend_enabled');
+              BEGIN
+                apex_plugin_util.debug_region(
+                  p_plugin => p_plugin,
+                  p_region => p_region
+                );
+                sys.htp.prn('<div id="'
+                            || c_id
+                            || '"></div>');
+                update_json_obj(c_settings_through_ui, 'displaySizeOnLoad', c_display_size);
+                update_json_obj(c_settings_through_ui, 'groupEdges', c_group_edges = 'Y');
+                update_json_obj(c_settings_through_ui, 'legendState', c_legend_state);
+                update_json_obj(c_settings_through_ui, 'sizeMode', c_size_mode);
+                update_json_obj(c_settings_through_ui, 'visibilityToggleMode', c_visibility_toggle_mode);
+                update_json_obj(c_settings_through_ui, 'edgeMarker', c_edge_marker);
+                IF c_layout IS NOT NULL THEN
+                  c_layout_settings.put('type', c_layout);
+                  update_json_obj(c_layout_settings, 'spacing', c_spacing);
+                  CASE c_layout
+                    WHEN 'force' THEN
+                      update_json_obj(c_layout_settings, 'alphaDecay', c_alphadecay);
+                      update_json_obj(c_layout_settings, 'velocityDecay', c_velocitydecay);
+                      update_json_obj(c_layout_settings, 'edgeDistance', c_edgedistance);
+                      update_json_obj(c_layout_settings, 'vertexCharge', c_vertexcharge);
+                      IF c_clusterenabled = 'Y' THEN
+                        c_layout_settings.put('clusterEnabled', TRUE);
+                        update_json_obj(c_clusteroptions, 'clusterBy', c_clusterby);
+                        update_json_obj(c_clusteroptions, 'hideUnclusteredVertices', c_hideunclusteredvertices = 'Y');
+                        IF c_clusteroptions.get_keys().count > 0 THEN
+                          c_layout_settings.put('clusterOptions', c_clusteroptions);
+                        END IF;
+                      END IF;
+                    WHEN 'grid' THEN
+                      update_json_obj(c_layout_settings, 'rows', c_gridrows);
+                      update_json_obj(c_layout_settings, 'columns', c_gridcolumns);
+                    WHEN 'hierarchical' THEN
+                      update_json_obj(c_layout_settings, 'rankDirection', c_hierarchical_rankdirection);
+                      update_json_obj(c_layout_settings, 'ranker', c_hierarchical_ranker);
+                      update_json_obj(c_layout_settings, 'vertexSeparation', c_hierarchical_vertexseparation);
+                      update_json_obj(c_layout_settings, 'edgeSeparation', c_hierarchical_edgeseparation);
+                      update_json_obj(c_layout_settings, 'rankSeparation', c_hierarchical_rankseparation);
+                    WHEN 'geographical' THEN
+                      update_json_obj(c_layout_settings, 'longitude', c_geo_longitude);
+                      update_json_obj(c_layout_settings, 'latitude', c_geo_latitude);
+                      update_json_obj(c_layout_settings, 'appId', c_geo_appid);
+                      update_json_obj(c_layout_settings, 'mapType', c_geo_maptype);
+                      update_json_obj(c_layout_settings, 'showInfo', c_geo_showinfo = 'Y');
+                      update_json_obj(c_layout_settings, 'showNavigation', c_geo_shownavigation = 'Y');
+                      update_json_obj(c_layout_settings, 'layers', c_geo_layers);
+                      update_json_obj(c_layout_settings, 'sources', c_geo_sources);
+                      update_json_obj(c_layout_settings, 'markers', c_geo_markers, TRUE);
+                    ELSE
+                      NULL;
+                  END CASE;
+                  c_settings_through_ui.put('layout', c_layout_settings);
+                END IF;
+                IF c_enable_expand = 'Y' THEN
+                  c_settings_through_ui.put('numberOfHops', c_number_of_hops);
+                  c_settings_through_ui.put('maxNumberOfHops', c_max_hops);
+                END IF;
+                IF c_livesearch = 'Y' THEN
+                  c_settings_through_ui.put('searchEnabled', TRUE);
+                ELSE
+                  c_settings_through_ui.put('searchEnabled', FALSE);
+                END IF;
+                IF c_default_legend_enabled = 'Y' THEN
+                  c_settings_through_ui.put('defaultLegendEnabled', TRUE);
+                ELSE
+                  c_settings_through_ui.put('defaultLegendEnabled', FALSE);
+                END IF;
+                IF c_legendwidth IS NOT NULL THEN
+                  c_settings_through_ui.put('legendWidth', c_legendwidth);
+                END IF;
+                update_json_obj(c_evolution, 'height', c_evolution_height);
+                update_json_obj(c_evolution, 'chart', c_evolution_chart);
+                update_json_obj(c_evolution, 'granularity', c_evolution_granularity);
+                update_json_obj(c_evolution, 'unit', c_evolution_unit);
+                update_json_obj(c_tmp_json, 'start', 'properties.' || c_evolution_vertex_start);
+                update_json_obj(c_tmp_json, 'end', c_evolution_vertex_end);
+                IF c_tmp_json.get_keys().count > 0 THEN
+                  c_evolution.put('vertex', c_tmp_json);
+                END IF;
+                c_tmp_json := json_object_t();
+                update_json_obj(c_tmp_json, 'start', c_evolution_edge_start);
+                update_json_obj(c_tmp_json, 'end', c_evolution_edge_end);
+                IF c_tmp_json.get_keys().count > 0 THEN
+                  c_evolution.put('edge', c_tmp_json);
+                END IF;
+                c_tmp_json := json_object_t();
+                update_json_obj(c_tmp_json, 'values', c_evolution_exclude_values, TRUE);
+                update_json_obj(c_tmp_json, 'show', c_evolution_exclude_show = 'Y');
+                IF c_tmp_json.get_keys().count > 0 THEN
+                  c_evolution.put('exclude', c_tmp_json);
+                END IF;
+                c_tmp_json := json_object_t();
+                update_json_obj(c_tmp_json, 'step', c_evolution_playback_step);
+                update_json_obj(c_tmp_json, 'timeout', c_evolution_playback_timeout);
+                IF c_tmp_json.get_keys().count > 0 THEN
+                  c_evolution.put('playback', c_tmp_json);
+                END IF;
+                update_json_obj(c_evolution, 'preservePositions', c_evolution_preservepositions = 'Y');
+                update_json_obj(c_evolution, 'axis', c_evolution_axis);
+                update_json_obj(c_evolution, 'labelFormat', c_evolution_labelformat);
+                IF c_evolution_enabled = 'Y' THEN
+                  c_settings_through_ui.put('evolution', c_evolution);
+                END IF;
+                update_json_obj(c_settings_through_ui, 'showTitle', c_showtitle = 'Y');
+                update_json_obj(c_settings_through_ui, 'escapeHtml', c_escapehtml = 'Y');
+                update_json_obj(c_settings_through_ui, 'tooltipCharLimit', c_tooltipcharlimit);
+                update_json_obj(c_settings_through_ui, 'charLimit', c_max_label_length);
+                IF c_dark_theme = 'Y' THEN
+                  c_settings_through_ui.put('theme', 'dark');
+                END IF;
+                c_tmp_json := json_object_t();
+                IF c_custom_theme = 'Y' THEN
+                  update_json_obj(c_tmp_json, 'backgroundColor', c_background_color);
+                  update_json_obj(c_tmp_json, 'textColor', c_text_color);
+                END IF;
+                IF c_tmp_json.get_keys().count > 0 THEN
+                  c_settings_through_ui.put('customTheme', c_tmp_json);
+                END IF;
+            $IF DBMS_DB_VERSION.VERSION >= 23 $THEN
+                IF
+                  c_graph_name IS NOT NULL
+                  AND c_graph_owner IS NOT NULL
+                THEN
+                  get_graph_metadata_proc(
+                    c_graph_name,
+                    c_graph_owner,
+                    c_schema_json
+                  );
+                END IF;
+            $END
+                apex_javascript.add_onload_code('initializeGVT('
+                                                || apex_javascript.add_value(p_region.static_id)
+                                                || apex_javascript.add_value(c_id)
+                                                || apex_javascript.add_value(apex_plugin.get_ajax_identifier)
+                                                || apex_javascript.add_value(c_display_size_control = 'Y')
+                                                || apex_javascript.add_value(c_template_settings)
+                                                || apex_javascript.add_value(c_template_styles)
+                                                || apex_javascript.add_value(c_settings)
+                                                || apex_javascript.add_value(c_vertex_label)
+                                                || apex_javascript.add_value(c_edge_label)
+                                                || apex_javascript.add_value(c_display)
+                                                || apex_javascript.add_value(c_expand)
+                                                || apex_javascript.add_value(c_fetch_actions)
+                                                || apex_javascript.add_value(p_value => c_persist)
+                                                || apex_javascript.add_value(c_height)
+                                                || apex_javascript.add_value(c_update_graph_data)
+                                                || apex_javascript.add_value(c_modes_options)
+                                                || apex_javascript.add_value(c_exploration_options)
+                                                || apex_javascript.add_value(c_ajax_items_to_submit)
+                                                || apex_javascript.add_value(c_rule_based_styles)
+                                                || apex_javascript.add_value(c_base_styles)
+                                                || apex_javascript.add_value(c_rule_based_groups)
+                                                || apex_javascript.add_value(c_evolution_settings)
+                                                || apex_javascript.add_value(c_settings_through_ui.to_string)
+                                                || apex_javascript.add_value(c_schema_json)
+                                                || apex_javascript.add_value(c_schema_settings)
+                                                || apex_javascript.add_value(c_defaults_for_modes)
+                                                || apex_javascript.add_value(c_search_function)
+                                                || apex_javascript.add_value(c_enable_expand)
+                                                || apex_javascript.add_value(c_update_rule_based_style, p_add_comma => FALSE)
+                                                || ');');
+              END render;
+              FUNCTION build_id_strings(p_ids IN apex_application_global.vc_arr2) RETURN VARCHAR2 IS
+                l_ids apex_t_varchar2 := apex_t_varchar2();
+              BEGIN
+                FOR i IN 1..p_ids.COUNT LOOP
+                  l_ids.EXTEND;
+                  l_ids(l_ids.LAST) := apex_exec.enquote_literal(p_ids(i));
+                END LOOP;
+                RETURN '(' || APEX_STRING.JOIN(l_ids, ', ') || ')';
+              END build_id_strings;
+              FUNCTION get_patterns(
+                p_direction IN VARCHAR2,
+                p_hops      IN INTEGER
+              ) RETURN apex_t_varchar2 IS
+                l_direction_pattern VARCHAR2(100);
+                l_hop_pattern       VARCHAR2(100) := '';
+              BEGIN
+                $IF DBMS_DB_VERSION.VERSION >= 23 $THEN
+                  IF p_hops > 1 THEN
+                    l_hop_pattern := CASE p_direction
+                                        WHEN 'outbound' THEN '->{,' || (p_hops - 1) || '}(y)'
+                                        WHEN 'inbound' THEN '<-{,' || (p_hops - 1) || '}(y)'
+                                    END;
+                  END IF;
+                $ELSE
+                  l_hop_pattern := CASE p_direction
+                                      WHEN 'outbound' THEN '->{,'
+                                      || (p_hops - 1)
+                                      || '}(y)'
+                                      WHEN 'inbound' THEN '<-{,'
+                                      || (p_hops - 1)
+                                      || '}(y)'
+                                  END;
+                $END
+                l_direction_pattern := CASE p_direction
+                                          WHEN 'outbound' THEN '-[e]->'
+                                          WHEN 'inbound' THEN '<-[e]-'
+                                      END;
+                RETURN apex_t_varchar2(l_direction_pattern, l_hop_pattern);
+              END get_patterns;
+              PROCEDURE handle_expand_callback(
+                p_ids             IN apex_application_global.vc_arr2,
+                p_expand_direction IN VARCHAR2,
+                p_hops            IN INTEGER,
+                p_graph_owner     IN VARCHAR2,
+                p_graph_name      IN VARCHAR2
+              ) IS
+                l_id_strings        VARCHAR2(32767) := build_id_strings(p_ids);
+                l_patterns          apex_t_varchar2 := get_patterns(p_expand_direction, p_hops);
+                l_direction_pattern VARCHAR2(100) := l_patterns(1);
+                l_hop_pattern       VARCHAR2(100) := l_patterns(2);
+                l_query_prefix      VARCHAR2(100)  := 'SELECT E FROM MATCH ';
+                l_query_middle      VARCHAR2(1000);
+                l_graph_identifier  VARCHAR2(500) := '"' || p_graph_owner || '"."' || p_graph_name || '"';
+                l_query             VARCHAR2(32767);
+                l_data              CLOB;
+              BEGIN
+                $IF DBMS_DB_VERSION.VERSION >= 23 $THEN
+                  l_query := 'SELECT id_x, id_e, id_z FROM GRAPH_TABLE (' || l_graph_identifier
+                          || ' MATCH (x) ' || l_hop_pattern || ' ' || l_direction_pattern || ' (z) '
+                          || ' WHERE JSON_VALUE(vertex_id(x), ''$.ELEM_TABLE'') || JSON_QUERY(vertex_id(x), ''$.KEY_VALUE'' RETURNING VARCHAR2) IN ' || l_id_strings
+                          || ' COLUMNS (vertex_id(x) AS id_x, edge_id(e) AS id_e, vertex_id(z) AS id_z))';
+                  SELECT apex_sqlgraph_json(l_query) INTO l_data FROM sys.dual;
+                $ELSE
+                  IF p_hops > 1 THEN
+                    l_query_middle := 'ANY (x) ' || l_hop_pattern || ' ON ' || l_graph_identifier || ', MATCH (y) ' || l_direction_pattern || ' () ON ' || l_graph_identifier;
+                  ELSE
+                    l_query_middle := '(x) ' || l_direction_pattern || ' () ON ' || l_graph_identifier;
+                  END IF;
+                  l_query := l_query_prefix || l_query_middle || ' WHERE id(x) IN ' || l_id_strings;
+                  SELECT ora_pgql_to_json(l_query) INTO l_data FROM sys.dual;
+                $END
+                apex_util.prn(l_data, FALSE);
+              END handle_expand_callback;
+              PROCEDURE handle_many_link_callback (p_bind_items IN VARCHAR2) IS
+                l_component_sql      VARCHAR2(32767);
+                l_context            apex_exec.t_context;
+                l_parameters         apex_exec.t_parameters;
+                l_vertex_list        apex_application_global.vc_arr2 := apex_application.g_f02;
+                l_edge_list          apex_application_global.vc_arr2 := apex_application.g_f03;
+                l_enquoted_vertices  apex_t_varchar2 := apex_t_varchar2();
+                l_enquoted_edges     apex_t_varchar2 := apex_t_varchar2();
+              BEGIN
+                FOR i IN 1..l_vertex_list.COUNT LOOP
+                  l_enquoted_vertices.EXTEND;
+                  l_enquoted_vertices(i) := apex_exec.enquote_literal(l_vertex_list(i));
+                END LOOP;
+                FOR i IN 1..l_edge_list.COUNT LOOP
+                  l_enquoted_edges.EXTEND;
+                  l_enquoted_edges(i) := apex_exec.enquote_literal(l_edge_list(i));
+                END LOOP;
+                l_component_sql := 'SELECT APEX_SQLGRAPH_GET_COUNTS(q''~#APEX$SOURCE_DATA#~'', JSON_ARRAY('
+                                  || APEX_STRING.JOIN(l_enquoted_vertices, ',')
+                                  || ' returning JSON), JSON_ARRAY('
+                                  || APEX_STRING.JOIN(l_enquoted_edges, ', ')
+                                  || ' returning JSON), q''~' || p_bind_items || '~'') AS j FROM DUAL';
+                l_context := apex_exec.open_query_context(
+                  p_sql_parameters => l_parameters,
+                  p_first_row      => 1,
+                  p_max_rows       => 1,
+                  p_component_sql  => l_component_sql
+                );
+                IF apex_exec.next_row(p_context => l_context) THEN
+                  apex_util.prn(apex_exec.get_clob(l_context, 1), FALSE);
+                END IF;
+              END handle_many_link_callback;
+              PROCEDURE ajax (
+                p_plugin IN apex_plugin.t_plugin,
+                p_region IN apex_plugin.t_region,
+                p_param  IN apex_plugin.t_region_ajax_param,
+                p_result IN OUT NOCOPY apex_plugin.t_region_ajax_result
+              ) IS
+                l_parameters      apex_exec.t_parameters;
+                l_context         apex_exec.t_context;
+                page_start        NUMBER := apex_application.g_x01;
+                page_size         NUMBER := apex_application.g_x02;
+                component_sql     VARCHAR2(32767);
+                result_pgql       CLOB;
+                j_obj             json_object_t;
+                j_array_vertices  json_array_t;
+                j_array_edges     json_array_t;
+                bind_items        VARCHAR2(32767) := p_region.ajax_items_to_submit;
+                callback_name     VARCHAR2(4000) := apex_application.g_x03;
+                expand_direction  VARCHAR2(200) := p_region.attributes.get_varchar2('expand_direction');
+                ids               apex_application_global.vc_arr2 := apex_application.g_f01;
+                graph_name        VARCHAR2(4000) := apex_application.g_x05;
+                graph_owner       VARCHAR2(4000) := apex_application.g_x06;
+                hops              INTEGER := apex_application.g_x07;
+              BEGIN
+                IF callback_name = 'expand' THEN
+                  handle_expand_callback(ids, expand_direction, hops, graph_owner, graph_name);
+                  RETURN;
+                END IF;
+                $IF DBMS_DB_VERSION.VERSION >= 23 $THEN
+                  IF callback_name = 'manylink' THEN
+                    handle_many_link_callback(p_bind_items => bind_items);
+                    RETURN;
+                  END IF;
+                  component_sql := 'SELECT APEX_SQLGRAPH_JSON(q''~#APEX$SOURCE_DATA#~'', ' || page_start || ',' || page_size
+                                  || ', q''~' || bind_items || '~'') AS j FROM DUAL';
+                  l_context := apex_exec.open_query_context(
+                    p_sql_parameters => l_parameters,
+                    p_first_row      => 1,
+                    p_max_rows       => 1,
+                    p_component_sql  => component_sql
+                  );
+                  IF apex_exec.next_row(p_context => l_context) THEN
+                    apex_util.prn(apex_exec.get_clob(l_context, 1), FALSE);
+                  END IF;
+                $ELSE
+                  IF p_region.attributes.get_varchar2('bind_variable_pgql') = 'Y' THEN
+                    apex_exec.add_parameter(l_parameters, 'page_start', page_start);
+                    apex_exec.add_parameter(l_parameters, 'page_size', page_size);
+                  END IF;
+                  BEGIN
+                    l_context := apex_exec.open_query_context(p_sql_parameters => l_parameters, p_first_row => 1, p_max_rows => 1);
+                  EXCEPTION
+                    WHEN OTHERS THEN
+                      RAISE_APPLICATION_ERROR(-20000, q'[Please verify that the 'Bind Variable - PGQL Only' property is correctly configured. If it's enabled, ensure that you have added the required bind variable names 'page_start' and 'page_size' to your query.]');
+                  END;
+                  IF apex_exec.next_row(p_context => l_context) THEN
+                    result_pgql := apex_exec.get_clob(l_context, 1);
+                    j_obj := json_object_t.parse(result_pgql);
+                    j_array_vertices := j_obj.get_array('vertices');
+                    j_array_edges := j_obj.get_array('edges');
+                    IF (j_array_vertices.get_size = 0 AND j_array_edges.get_size = 0)
+                      OR p_region.attributes.get_varchar2('bind_variable_pgql') = 'N' THEN
+                      j_obj.put('isLastResultSet', TRUE);
+                    ELSE
+                      j_obj.put('isLastResultSet', FALSE);
+                    END IF;
+                    apex_util.prn(j_obj.to_clob(), FALSE);
+                  END IF;
+                $END
+                apex_exec.close(l_context);
+              EXCEPTION
+                WHEN OTHERS THEN
+                  apex_exec.close(l_context);
+                  RAISE;
+              END ajax;
+            ```
+    }
+    callbacks {
+        renderProcedureName: render
+        ajaxProcedureName: ajax
+    }
+    css {
+        fileUrls: [
+            #PLUGIN_FILES#alta.css
+            #PLUGIN_FILES#wrapper.css
+            #PLUGIN_FILES#bundle.css
+        ]
+    }
+    javaScript {
+        fileUrls: [
+            #PLUGIN_FILES#index.js
+            #PLUGIN_FILES#lodash.min.js
+            "[require requirejs]#PLUGIN_FILES#wrapper.js"
+        ]
+    }
+    information {
+        version: 26.1.1
+    }
+
+    standardAttributeConfig (
+        name: regionSourceSupportsDifferentDataSources
+        validation {
+            required: true
+        }
+    )
+
+)
+
