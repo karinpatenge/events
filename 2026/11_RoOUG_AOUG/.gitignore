@@ -9,8 +9,8 @@ scripts/logs/*
 # Working material for preparing the session
 internal/
 
-# Local configuration with secrets (copy of config.example.toml)
-scripts/python/config.toml
+# Python helpers (network generator, external simulator): not part of the repository
+scripts/python/
 
 # Personal environment and SQLcl session settings
 .env
