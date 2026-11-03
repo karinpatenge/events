@@ -33,3 +33,8 @@ documents/
 # Presentation: only the PDF files go into the repository
 presentation/*
 !presentation/*.pdf
+
+# Media: only the teaser videos and the octemea26 icons go into the repository
+media/*
+!media/01_teaser*.mp4
+!media/octemea26*
