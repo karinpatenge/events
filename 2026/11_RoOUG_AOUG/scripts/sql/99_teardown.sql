@@ -2,10 +2,12 @@
 -- 99_teardown.sql - removes all demo objects from the demo schema (OGBEMEA2026)
 --
 -- Author:      Karin Patenge
--- Last update: 2026-10-28
+-- Last update: 2026-11-04
 --
 -- =============================================================================
 BEGIN DBMS_SCHEDULER.DROP_JOB('DH_TICK_JOB', force => TRUE); EXCEPTION WHEN OTHERS THEN NULL; END;
+/
+BEGIN DBMS_SCHEDULER.DROP_JOB('DH_WO_JOB', force => TRUE); EXCEPTION WHEN OTHERS THEN NULL; END;
 /
 BEGIN
   FOR g IN (SELECT graph_name FROM user_property_graphs WHERE graph_name LIKE 'DH\_%' ESCAPE '\') LOOP
