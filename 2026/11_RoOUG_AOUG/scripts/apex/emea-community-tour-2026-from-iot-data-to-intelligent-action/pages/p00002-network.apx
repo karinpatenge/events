@@ -20,7 +20,7 @@ page 2 (
                 if (id === "map" && !r.getMapObject()) { return; }   // map not initialized yet
                 try { r.refresh(); } catch (e) { apex.debug.warn("refresh " + id + ": " + e.message); }
               });
-            }, 30000);
+            }, 60000);
             ```
     }
     css {
