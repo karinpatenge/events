@@ -2,7 +2,7 @@
 -- 06b_device_sim.sql
 --
 -- Author:      Karin Patenge
--- Last update: 2026-10-28
+-- Last update: 2026-11-04
 --
 -- Package DH_DEVICE_SIM: the database plays the 50 field devices.
 -- Called by the scheduler job DH_TICK_JOB (08_jobs.sql) every 30 seconds:
@@ -13,7 +13,7 @@
 --   2. readings   one reading per twin (10 pump stations, 40 substations) from
 --                 the same formulas as the 7-day history in 03_backfill.sql:
 --                 daily load profile, noise, bearing wear of PS-04 and PS-08,
---                 stuck temperature sensor at SS-09.3
+--                 stuck temperature sensor at SS-09.3 (DH_CONFIG SIM_STUCK_SENSOR)
 --   3. store      INSERT into DH_TELEMETRY (source SIMULATED)  - INGEST_MODE DIRECT
 --   4. publish    HTTPS POST of the same JSON to the OCI IoT Platform device
 --                 endpoint, like a real device (basic auth: external key + device
@@ -21,7 +21,8 @@
 --
 -- Operator and demo actions (instead of keys in a simulator):
 --   EXEC dh_device_sim.trip('PS-04')        vibration spike, trips at the next tick
---   EXEC dh_device_sim.repair('PS-04')      repaired and restarted, wear gone
+--   EXEC dh_device_sim.repair('PS-04')      repaired and restarted, wear gone, open work orders done
+--                                           (a closed work order repairs its asset the same way, 10_work_orders.sql)
 --   EXEC dh_set_valve('BYP-1', 'OPEN')      bypass (also the APEX button), 09_apex_support.sql
 --   EXEC dh_device_sim.reset                simulation state only (dh_sim.reset_state resets all)
 --   SELECT dh_device_sim.status FROM dual;  one line: stopped pumps, bypasses, supply, publish
@@ -31,15 +32,29 @@
 -- IOT_DEVICE_HOST, IOT_DEVICE_ENDPOINT, IOT_DEVICE_PASSWORD.
 -- Outbound HTTPS uses APEX_WEB_SERVICE, which needs no network ACL in
 -- Autonomous AI Database (see 00_admin_setup.sql).
--- Idempotent: CREATE OR REPLACE only.
+-- Idempotent: CREATE OR REPLACE, and the setting below is only added if missing.
 -- =============================================================================
+
+-- The substation whose temperature sensor is stuck at 41 degrees C. A repair of that
+-- substation sets it to NONE; dh_sim.reset_state sets it back to SS-09.3.
+MERGE INTO dh_config c USING (SELECT 'SIM_STUCK_SENSOR' name, 'SS-09.3' value FROM dual) s
+ON (c.name = s.name) WHEN NOT MATCHED THEN INSERT (name, value) VALUES (s.name, s.value);
+COMMIT;
 
 CREATE OR REPLACE PACKAGE dh_device_sim AS
   -- One simulation step: state, readings, store and/or publish. Commits.
   PROCEDURE tick;
   -- Demo actions
   PROCEDURE trip   (p_asset_id IN VARCHAR2 DEFAULT 'PS-04');
+  -- repair: the crew's work is done. Restarts the pump (no wear), sets the open
+  -- work orders of the asset to DONE and writes an entry into DH_MAINTENANCE
+  -- (id R-..., removed again by dh_sim.reset_state). Commits.
   PROCEDURE repair (p_asset_id IN VARCHAR2 DEFAULT 'PS-04');
+  -- The effect of a repair on the simulated device only, without commit and
+  -- without touching work orders: pump running again, no wear; for the
+  -- substation with the stuck sensor, the sensor works again.
+  -- Used by repair and by dh_wo_flow.close_work_order (10_work_orders.sql).
+  PROCEDURE repair_asset (p_asset_id IN VARCHAR2);
   PROCEDURE reset;
   -- One line about the current simulation state
   FUNCTION  status RETURN VARCHAR2;
@@ -54,7 +69,6 @@ CREATE OR REPLACE PACKAGE BODY dh_device_sim AS
 
   c_wear_rate_ps04 CONSTANT NUMBER := 0.11;    -- mm/s per hour, as at the end of the backfill
   c_wear_rate_ps08 CONSTANT NUMBER := 0.018;
-  c_stuck_ss       CONSTANT VARCHAR2(20) := 'SS-09.3';
   -- Time constants, compressed for the demo: after one 30-s step 63 % of the
   -- change is done, after two steps 86 % (buildings react within ~1.5 min)
   c_tau_down       CONSTANT NUMBER := 30;      -- seconds: cooling when supply is lost
@@ -195,6 +209,7 @@ CREATE OR REPLACE PACKAGE BODY dh_device_sim AS
     v_vib NUMBER; v_brg NUMBER; v_pow NUMBER; v_flow NUMBER; v_pres NUMBER;
     v_tsup NUMBER; v_tret NUMBER; v_tsec NUMBER; v_dp NUMBER;
     l_s    NUMBER;
+    l_stuck VARCHAR2(20) := NVL(cfg('SIM_STUCK_SENSOR'), 'NONE');   -- substation with the stuck sensor
 
     PROCEDURE add_reading (p_asset_id IN VARCHAR2, p_metric IN VARCHAR2, p_value IN NUMBER) IS
     BEGIN
@@ -287,7 +302,7 @@ CREATE OR REPLACE PACKAGE BODY dh_device_sim AS
       ELSE
         v_tsup := 45 + (100 + 8 * l_load - 45) * l_s + 0.6 * DBMS_RANDOM.NORMAL;
         v_tret := 40 + (52 + 4 * l_load - 40) * l_s + 0.8 * DBMS_RANDOM.NORMAL;
-        v_tsec := CASE WHEN r.asset_id = c_stuck_ss THEN 41.0
+        v_tsec := CASE WHEN r.asset_id = l_stuck THEN 41.0
                        ELSE 38 + (66 + 3 * l_load - 38) * l_s + 0.5 * DBMS_RANDOM.NORMAL END;
         v_dp   := 0.1 + (1.15 + 0.1 * l_load - 0.1) * l_s + 0.03 * DBMS_RANDOM.NORMAL;
         v_flow := r.rated_kw / 1000 * 30 * l_load * (0.1 + 0.9 * l_s) + 0.8 * DBMS_RANDOM.NORMAL;
@@ -362,17 +377,57 @@ CREATE OR REPLACE PACKAGE BODY dh_device_sim AS
     DBMS_OUTPUT.PUT_LINE(UPPER(p_asset_id) || ': vibration spike at the next tick, trips at the tick after (about 30-60 s)');
   END trip;
 
-  PROCEDURE repair (p_asset_id IN VARCHAR2 DEFAULT 'PS-04') IS
+  PROCEDURE repair_asset (p_asset_id IN VARCHAR2) IS
   BEGIN
-    UPDATE dh_sim_state SET pump_state = 'RUNNING', wear = 0 WHERE asset_id = UPPER(p_asset_id);
+    UPDATE dh_sim_state SET pump_state = 'RUNNING', wear = 0 WHERE asset_id = p_asset_id;
+    IF cfg('SIM_STUCK_SENSOR') = p_asset_id THEN
+      set_cfg('SIM_STUCK_SENSOR', 'NONE');          -- sensor replaced: real values again
+    END IF;
+  END repair_asset;
+
+  PROCEDURE repair (p_asset_id IN VARCHAR2 DEFAULT 'PS-04') IS
+    l_asset   dh_assets.asset_id%TYPE := UPPER(TRIM(p_asset_id));
+    l_faulty  PLS_INTEGER;
+    l_wo_n    PLS_INTEGER;
+    l_wo_list VARCHAR2(200);
+  BEGIN
+    -- was there anything to repair? (pump stopped or tripping, bearing wear, stuck sensor)
+    SELECT COUNT(*) INTO l_faulty FROM dh_sim_state
+    WHERE  asset_id = l_asset AND (pump_state <> 'RUNNING' OR wear > 0);
+    IF cfg('SIM_STUCK_SENSOR') = l_asset THEN
+      l_faulty := l_faulty + 1;
+    END IF;
+
+    repair_asset(l_asset);
+
+    -- the open work orders of the asset are done
+    SELECT COUNT(*), LISTAGG(wo_id, ', ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY wo_id)
+    INTO   l_wo_n, l_wo_list
+    FROM   dh_work_orders
+    WHERE  asset_id = l_asset AND status IN ('NEW', 'PLANNED', 'IN_PROGRESS');
+    UPDATE dh_work_orders SET status = 'DONE'
+    WHERE  asset_id = l_asset AND status IN ('NEW', 'PLANNED', 'IN_PROGRESS');
+
+    -- one entry in the maintenance history, only if something was done
+    -- (a second call on a healthy asset without open work orders adds nothing)
+    IF l_faulty > 0 OR l_wo_n > 0 THEN
+      INSERT INTO dh_maintenance (maint_id, asset_id, performed_on, maint_type, description, downtime_hours)
+      VALUES ('R-' || TO_CHAR(SYSTIMESTAMP, 'YYMMDDHH24MISSFF3'), l_asset, SYSDATE, 'CORRECTIVE',
+              'Repaired and restarted'
+              || CASE WHEN l_wo_n > 0 THEN '; work order' || CASE WHEN l_wo_n > 1 THEN 's' END
+                                           || ' ' || l_wo_list || ' done' END,
+              NULL);
+    END IF;
     COMMIT;
-    DBMS_OUTPUT.PUT_LINE(UPPER(p_asset_id) || ': repaired and restarted');
+    DBMS_OUTPUT.PUT_LINE(l_asset || ': repaired and restarted'
+                         || CASE WHEN l_wo_n > 0 THEN ', work orders done: ' || l_wo_list END);
   END repair;
 
   PROCEDURE reset IS
   BEGIN
     DELETE FROM dh_sim_state;
     UPDATE dh_config SET value = NULL WHERE name = 'SIM_LAST_TICK';
+    set_cfg('SIM_STUCK_SENSOR', 'SS-09.3');
     COMMIT;
     ensure_state;
     COMMIT;
