@@ -2,7 +2,7 @@
 -- 07_agent_api.sql
 --
 -- Author:      Karin Patenge
--- Last update: 2026-10-27
+-- Last update: 2026-11-04
 --
 -- Graph-powered tools for AI agents and for the APEX app.
 --
@@ -496,7 +496,7 @@ CREATE OR REPLACE PACKAGE BODY dh_graph_api AS
              'open_work_orders' VALUE (
                 SELECT JSON_ARRAYAGG(JSON_OBJECT('wo_id' VALUE w.wo_id, 'priority' VALUE w.priority,
                                                  'title' VALUE w.title, 'status' VALUE w.status) RETURNING CLOB)
-                FROM dh_work_orders w WHERE w.asset_id = a.asset_id AND w.status IN ('NEW', 'PLANNED')) FORMAT JSON
+                FROM dh_work_orders w WHERE w.asset_id = a.asset_id AND w.status IN ('NEW', 'PLANNED', 'IN_PROGRESS')) FORMAT JSON
              ABSENT ON NULL RETURNING CLOB)
     INTO   l_json
     FROM   dh_assets a
