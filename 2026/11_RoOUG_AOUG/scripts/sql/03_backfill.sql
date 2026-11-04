@@ -2,7 +2,7 @@
 -- 03_backfill.sql
 --
 -- Author:      Karin Patenge
--- Last update: 2026-10-27
+-- Last update: 2026-11-04
 --
 -- Package DH_SIM: generates 7 days of telemetry history in the database, so the
 -- demo starts with trends (PS-04 bearing wear over 3 days, PS-08 slow wear,
@@ -22,8 +22,9 @@ CREATE OR REPLACE PACKAGE dh_sim AS
   PROCEDURE backfill (p_days     IN NUMBER    DEFAULT 7,
                       p_step_min IN NUMBER    DEFAULT 5,
                       p_end      IN TIMESTAMP DEFAULT NULL);
-  -- Resets anomalies, work orders, health, bypass valves, live telemetry and the
-  -- state of the device simulation (keeps topology and the backfill history).
+  -- Resets anomalies, work orders, health, bypass valves, live telemetry, the
+  -- maintenance entries of repairs and the state of the device simulation
+  -- (keeps topology, the seeded maintenance history and the backfill history).
   PROCEDURE reset_state;
   -- UTC now as TIMESTAMP(3)
   FUNCTION utc_now RETURN TIMESTAMP;
@@ -49,6 +50,10 @@ CREATE OR REPLACE PACKAGE BODY dh_sim AS
     UPDATE dh_pipes  SET valve_state = 'CLOSED' WHERE pipe_kind = 'BYPASS';
     DELETE FROM dh_sim_state;                               -- recreated by the next tick
     UPDATE dh_config SET value = NULL WHERE name IN ('SIM_LAST_TICK', 'IOT_LAST_TS');
+    DELETE FROM dh_maintenance WHERE maint_id LIKE 'R-%' OR maint_id LIKE 'W-%';   -- written by repairs
+    MERGE INTO dh_config c USING (SELECT 'SIM_STUCK_SENSOR' name, 'SS-09.3' value FROM dual) s
+    ON (c.name = s.name) WHEN MATCHED THEN UPDATE SET c.value = s.value
+    WHEN NOT MATCHED THEN INSERT (name, value) VALUES (s.name, s.value);   -- the stuck sensor is back
     COMMIT;
   END reset_state;
 
