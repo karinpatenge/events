@@ -45,8 +45,9 @@ All data is synthetic. District names of Vienna and Bucharest are real; assets, 
 | `sql/06_iot_sync.sql` | Optional: reading the data back from the IoT Data API ([section 10](#10-optional-reading-the-data-back-through-the-iot-data-api)) |
 | `sql/06b_device_sim.sql` | Device simulation: readings, trip and repair, posts to the IoT Platform |
 | `sql/07_agent_api.sql` | The agent tools: `AGENT_*` functions returning JSON, package `DH_GRAPH_API` |
-| `sql/08_jobs.sql` | Scheduler job `DH_TICK_JOB` (every 30 seconds) |
+| `sql/08_jobs.sql` | Scheduler job `DH_TICK_JOB` (simulation and analytics, every 30 seconds) |
 | `sql/09_apex_support.sql` | Views for APEX and the Data Analysis Agent, procedure `DH_SET_VALVE` |
+| `sql/10_work_orders.sql` | Work orders for the APEX workflow: view, work plan per asset, status changes, close and repair; bypass of an asset for page 3 |
 | `sql/demo_state.sql` | Puts the demo into a defined state: `base`, `incident` or `bypass` |
 | `sql/stop_tick_job.sql` | Stops the job and waits for a running tick |
 | `sql/test_all.sql`, `sql/test_skip.sql` | Retests the whole demo with a PASS/FAIL list |
@@ -158,16 +159,30 @@ The simulation runs in real time: one tick every 30 seconds.
 |---|---|
 | State in one line | `SELECT dh_device_sim.status FROM dual;` |
 | Trip PS-04 (spike at the next tick, stopped at the one after) | `EXEC dh_device_sim.trip('PS-04')` |
-| Repair PS-04 | `EXEC dh_device_sim.repair('PS-04')` |
+| Repair PS-04 by hand: restarts the pump, sets its open work orders to `DONE`, adds an entry to the maintenance history | `EXEC dh_device_sim.repair('PS-04')` |
+| Work orders and their status | `SELECT wo_id, asset_id, priority, status, title FROM dh_work_orders ORDER BY wo_id DESC;` |
 | Open / close bypass BYP-1 (also a button in the APEX app) | `EXEC dh_set_valve('BYP-1', 'OPEN')` / `'CLOSED'` |
 | One step by hand (job disabled) | `EXEC dh_job_tick` |
 | Start / stop the job | `EXEC DBMS_SCHEDULER.ENABLE('DH_TICK_JOB')` / `@sql/stop_tick_job.sql` |
-| Messages of the job | `SELECT logged_at, step, message FROM dh_job_log ORDER BY log_id DESC FETCH FIRST 20 ROWS ONLY;` |
+| Messages of the jobs | `SELECT logged_at, step, message FROM dh_job_log ORDER BY log_id DESC FETCH FIRST 20 ROWS ONLY;` |
 | Result of the last post per twin | `SELECT asset_id, last_http_status, last_error FROM dh_sim_state ORDER BY asset_id;` |
+
+### Work orders
+
+Work orders come from the AI agent (`AGENT_CREATE_WORK_ORDER`) or from page 6 of the APEX app (*Create work order for …* on page 3). In the app they go through a workflow with three human-in-the-loop steps (`sql/10_work_orders.sql`, `apex/BUILD.md` section 11):
+
+```text
+NEW ──approve──► PLANNED ──start work──► IN_PROGRESS ──confirm done──► DONE ("Closed")
+  └──reject──► CANCELLED                                  └─ the asset is repaired: pump running
+                                                             again, or the stuck sensor works again;
+                                                             entry in the maintenance history
+```
+
+A repaired pump station supplies its buildings again within about 1.5 minutes. Work orders of the AI agent stay `NEW` until someone starts their workflow on page 6 (*Start workflow*). Open work orders (`NEW`, `PLANNED`, `IN_PROGRESS`) count on the home page of the app and appear in the graph of page 3.
 
 ### Demo states
 
-`sql/demo_state.sql` resets the demo to a defined state, from scratch, as often as needed. It stops the job, removes work orders, open bypasses, what-if scenarios, live readings and anomalies, and the function `AGENT_CRITICAL_CUSTOMERS` from [section 9](#9-optional-coding-agent-with-oracle-skills-and-the-sqlcl-mcp-server). Then it writes a new 7-day history, starts the job and waits until the network has reacted.
+`sql/demo_state.sql` resets the demo to a defined state, from scratch, as often as needed. It stops the job, removes work orders, the maintenance entries of repairs, open bypasses, what-if scenarios, live readings and anomalies, and the function `AGENT_CRITICAL_CUSTOMERS` from [section 9](#9-optional-coding-agent-with-oracle-skills-and-the-sqlcl-mcp-server). Then it writes a new 7-day history, starts the job and waits until the network has reacted.
 
 | State | Command | Takes | Result |
 |---|---|---|---|
@@ -302,7 +317,7 @@ The *Data* tab of the twins now changes every 30 seconds (reload the page).
 
 ## 7. Optional: APEX application
 
-An operator app with five pages: home tiles, network graph and map, incident analysis with bypass and work order buttons, asset telemetry with limits, and a chat with an APEX AI Agent that uses the same `AGENT_*` tools.
+An operator app with eight pages: home tiles, network graph and map, incident analysis with bypass and work order buttons, asset telemetry with limits, a chat with an APEX AI Agent that uses the same `AGENT_*` tools, and work orders that go through an APEX workflow with three approval steps (page 6, task list on page 7, task details on page 8).
 
 - [`apex/README.md`](apex/README.md): what each page shows.
 - [`apex/BUILD.md`](apex/BUILD.md): prerequisites (APEX 26.1, Graph Visualization plug-in, Web Credential and Generative AI Service) and every component, to import the APEXlang export from `apex/` or to build the app by hand.
@@ -426,36 +441,21 @@ SELECT JSON_SERIALIZE(agent_active_anomalies('WARNING') RETURNING CLOB PRETTY) F
 
 On Windows, run `chcp 65001` before starting SQLcl, otherwise `°C` shows as `┬░C`.
 
-### 8.3 Flow 2 – "Morning Briefing" (fixed workflow)
+### 8.3 Flow 2 – "Morning Briefing"
 
-A fixed chain instead of a chat: a SQL query counts the open alarms and warnings, a condition decides, and only if there is something to report the agent writes a briefing for the shift lead. The agent may only read.
+A second agent that only reads: on request it writes a short briefing for the shift lead. It first checks whether there is anything to report, and answers with a fixed sentence if not.
 
 ```text
-SQL Query ──(JSON)──► Parser ──(Message → Text Input)──► Condition
-                                                 │ True               │ False
-                                                 ▼                    ▼
-         Oracle PL/SQL Executor ──Tools──► Agent (Prompt)        Chat Output "no briefing"
-         (read-only routines)                │ Message
-                                             ▼
-                                        Chat Output (and optional Email Output)
+Chat Input ──(Message → Prompt)──► Agent ──(Message → Message)──► Chat Output
+                                     ▲ Tools
+                                     └── Oracle PL/SQL Executor  (ADB_DH, read-only routines)
 ```
 
-1. **Agent Builder → new flow**, name `Morning Briefing`.
-2. **SQL Query**: data source `ADB_DH`, query:
-   ```sql
-   SELECT COUNT(*) AS alarms
-   FROM   dh_anomalies
-   WHERE  status <> 'CLOSED'
-   AND    severity IN ('ALARM', 'WARNING')
-   ```
-3. **Parser**: SQL Query *JSON* → Parser *JSON or DataFrame*. *Root path* **`records`** · *Mode* `Parser` · *Template* `{ALARMS}`. The SQL Query node wraps its rows as `{"records": [{"ALARMS": 47}]}`; without the root path the template finds nothing and the condition is always false. The Parser's output is just the number.
-4. **Condition**: Parser *Message* → *Text Input* · *Operator* `greater than` · *Match Text* `0` · *True Message*: `Good morning. There are open alarms and warnings. Write today's morning briefing for the shift lead.` · *False Message*: `No open alarms or warnings. No briefing sent.` The Condition passes on its True or False Message, not its input.
-5. **Chat Output** on Condition *False*.
-6. **Oracle PL/SQL Executor**, a new one for this flow: database `ADB_DH`, allowed routines **read-only**: `AGENT_NETWORK_STATUS`, `AGENT_ACTIVE_ANOMALIES`, `AGENT_FIND_ROOT_CAUSE`, `AGENT_IMPACT_ANALYSIS`, `AGENT_PREDICT_FAILURES`; auto-commit off. `AGENT_CREATE_WORK_ORDER` is deliberately missing: the briefing recommends, the operator decides.
-7. **Agent**: model `<CHAT_MODEL>`, temperature 0.1 if offered, *Custom instructions* below, *Agent description* `Writes the morning briefing for the shift lead of the district heating network from the AGENT_* database functions.` Connections: Condition *True* → Agent *Prompt*; PL/SQL Executor *Tools* → Agent *Tools*.
-8. **Chat Output** on Agent *Message*.
-9. Optional: **Email Output** on Agent *Message* (needs SMTP in the Agent Factory settings; subject for example `Morning briefing – district heating`). For email, the last instruction can ask for simple HTML instead of plain text.
-10. **Save**.
+1. **Agent Builder → new flow**, name `Morning Briefing`, with the same three connections as Flow 1.
+2. **Oracle PL/SQL Executor**, a new one for this flow: database `ADB_DH`, allowed routines **read-only**: `AGENT_NETWORK_STATUS`, `AGENT_ACTIVE_ANOMALIES`, `AGENT_FIND_ROOT_CAUSE`, `AGENT_IMPACT_ANALYSIS`, `AGENT_PREDICT_FAILURES`; auto-commit off. `AGENT_CREATE_WORK_ORDER` is deliberately missing: the briefing recommends, the operator decides.
+3. **Agent**: model `<CHAT_MODEL>`, temperature 0.1 if offered, *Custom instructions* below, *Agent description* `Writes the morning briefing for the shift lead of the district heating network from the AGENT_* database functions.`
+4. Optional: **Email Output** on Agent *Message* (needs SMTP in the Agent Factory settings).
+5. **Save**.
 
 Briefing instructions (*Custom instructions* of the Agent node):
 
@@ -464,13 +464,21 @@ You write the morning briefing for the shift lead of a district heating network.
 
 Rules
 - Use the tools. Never guess numbers, asset ids or causes.
-- All tools are database functions behind the Oracle PL/SQL Executor. Call its
-  execution tool with the exact function name and the arguments. If you are
-  unsure about a function's parameters, use the discovery tool first.
-- Call AGENT_NETWORK_STATUS, AGENT_ACTIVE_ANOMALIES with p_min_severity =
-  'WARNING', AGENT_FIND_ROOT_CAUSE and AGENT_PREDICT_FAILURES. For every incident
-  classified EQUIPMENT_PROBLEM also call AGENT_IMPACT_ANALYSIS with its
-  root-cause asset.
+- The functions below are database functions behind the Oracle PL/SQL Executor.
+  They are not tools of their own: call the executor's execution tool with the
+  exact function name (for example AGENT_NETWORK_STATUS) and its arguments. If
+  you are unsure about a function's name or parameters, call the executor's
+  discovery tool first.
+- Always run AGENT_NETWORK_STATUS first, before you answer anything. Its field
+  open_anomalies lists the open anomalies as counts per severity.
+- Only if open_anomalies has no entry with severity ALARM or WARNING, answer
+  exactly: "No open alarms or warnings. No briefing sent." Never give this answer
+  without running AGENT_NETWORK_STATUS first.
+- Otherwise also run AGENT_FIND_ROOT_CAUSE (no arguments) and
+  AGENT_PREDICT_FAILURES (no arguments). Write the briefing from these three
+  results only. Report under Expected failures only what AGENT_PREDICT_FAILURES
+  returns, with asset id, name and hours to the alarm limit.
+- A SUSPECTED_SENSOR_FAULT gets priority P4 (check the sensor), not P1.
 - Sections: Situation · Root causes · Impact · Expected failures · Recommended
   actions. Report life-critical buildings (hospital, nursing home, school) first.
 - Always write the asset id with the name, for example "PS-04 (Pump station
@@ -483,13 +491,26 @@ Rules
 - At most 200 words. Plain text, no Markdown.
 ```
 
-**Test.** The flow has no Chat Input: in the Playground, whatever you type only starts the run (a space is enough); it is not read. For questions, use Flow 1.
+Two points that matter:
 
-1. In state `base` (`@sql/demo_state.sql base`): the briefing names PS-04 with rising vibration before it fails, PS-08 with its trend, and SS-09.3 with the stuck sensor. The agent needs 30–60 seconds for its tool calls.
-2. The `v$sql` check from 8.2 shows the `AGENT_*` calls, and no `AGENT_CREATE_WORK_ORDER`.
-3. False branch: set *Match Text* to `1000` for one run; only the False Message appears and no `AGENT_*` function is called. Set it back to `0`.
+- **The functions are not tools of their own.** The Oracle PL/SQL Executor offers a discovery tool and an execution tool. An instruction like "call AGENT_NETWORK_STATUS" without saying how makes the model look for a tool of that name; it then answers that the tool is not available.
+- **Keep the number of function calls small.** With five functions per briefing, the agent ended without a message ("The flow finished without a user-facing response"); with these three it answers reliably. `AGENT_NETWORK_STATUS` gives the counts, `AGENT_FIND_ROOT_CAUSE` the causes with evidence, `AGENT_PREDICT_FAILURES` the assets that will reach an alarm limit.
 
-**Publish** (optional): saving is enough for the Playground. A published flow can also be run through the integration endpoint `POST https://<AGENT_FACTORY_HOST>:8080/agentFactory/v1/integrations/agents/<agent_id>/run` with an API key (created by an administrator in the chat window under *Integration options → API Key*, bound to this agent, shown only once), for example from a database job every morning.
+**Test.** Playground → **New chat** → send `Morning briefing`; the answer takes up to a minute. In state `base` (`@sql/demo_state.sql base`):
+
+| Section | Expected |
+|---|---|
+| Situation | 5 buildings without heat, open anomalies by severity |
+| Root causes | SS-09.3, `SUSPECTED_SENSOR_FAULT`: secondary supply temperature frozen at 41 °C |
+| Impact | no life-critical building affected |
+| Expected failures | PS-04: vibration within about a day and bearing temperature within about two days (P2); PS-08: vibration within about 6 days (P3) |
+| Recommended actions | P4 sensor check at SS-09.3, P2 for PS-04, P3 for PS-08; no work order is created |
+
+The `v$sql` check from 8.2 shows exactly three `AGENT_*` functions per briefing, and never `AGENT_CREATE_WORK_ORDER`.
+
+**Publish** (optional): saving is enough for the Playground. A published flow can also be run through the integration endpoint `POST https://<AGENT_FACTORY_HOST>:8080/agentFactory/v1/integrations/agents/<agent_id>/run` with an API key (created by an administrator in the chat window under *Integration options → API Key*, bound to this agent, shown only once), for example by a database job every morning with the message `Morning briefing`.
+
+**Why no SQL query and condition in front of the agent?** A fixed chain *SQL Query → Parser → Condition → Agent* would run the agent only when the count is above zero. In Agent Factory 26.10 the Condition fired correctly, but the Agent node behind it never ran. The check is therefore the agent's first step instead.
 
 ### 8.4 Data Analysis Agent (ad-hoc questions with charts)
 
