@@ -2,7 +2,7 @@
 -- 00_install.sql - installs the demo into the demo schema (run as that user with SQLcl)
 --
 -- Author:      Karin Patenge
--- Last update: 2026-10-28
+-- Last update: 2026-11-04
 --
 --   sql -cloudconfig Wallet_<db>.zip ogbemea2026@<db>_high @00_install.sql vie
 --   sql -cloudconfig Wallet_<db>.zip ogbemea2026@<db>_high @00_install.sql buc
@@ -48,6 +48,8 @@ PROMPT == 08 jobs
 @@08_jobs.sql
 PROMPT == 09 APEX support
 @@09_apex_support.sql
+PROMPT == 10 work orders (APEX workflow)
+@@10_work_orders.sql
 
 PROMPT == 7 days of history, first simulation step, first analysis
 EXEC dh_sim.reset_state
