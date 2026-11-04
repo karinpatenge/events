@@ -288,7 +288,7 @@ page 3 (
                 SELECT *
                 FROM   GRAPH_TABLE (
                         dh_network
-                        MATCH (w IS work_order WHERE w.status IN ('NEW', 'PLANNED')) -[t IS targets]-> (s IS asset WHERE s.asset_id = :P3_ASSET_ID)
+                        MATCH (w IS work_order WHERE w.status IN ('NEW', 'PLANNED', 'IN_PROGRESS')) -[t IS targets]-> (s IS asset WHERE s.asset_id = :P3_ASSET_ID)
                         COLUMNS (VERTEX_ID(w) AS id_a, EDGE_ID(t) AS id_e, VERTEX_ID(s) AS id_b))
                 
                 
