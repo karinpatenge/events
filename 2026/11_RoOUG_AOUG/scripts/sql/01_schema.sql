@@ -2,7 +2,7 @@
 -- 01_schema.sql
 --
 -- Author:      Karin Patenge
--- Last update: 2026-10-28
+-- Last update: 2026-11-04
 --
 -- Relational foundation for the district heating demo (schema OGBEMEA2026).
 --
@@ -127,11 +127,38 @@ CREATE TABLE IF NOT EXISTS dh_work_orders (
   priority     VARCHAR2(2)   NOT NULL CONSTRAINT dh_wo_prio_ck CHECK (priority IN ('P1','P2','P3','P4')),
   title        VARCHAR2(200) NOT NULL,
   details      CLOB,
-  status       VARCHAR2(10)  DEFAULT 'NEW' NOT NULL
-               CONSTRAINT dh_wo_status_ck CHECK (status IN ('NEW','PLANNED','DONE','CANCELLED')),
+  status       VARCHAR2(12)  DEFAULT 'NEW' NOT NULL
+               CONSTRAINT dh_wo_status_ck CHECK (status IN ('NEW','PLANNED','IN_PROGRESS','DONE','CANCELLED')),
   created_by   VARCHAR2(60)  DEFAULT 'OPERATOR' NOT NULL
 );
 CREATE INDEX IF NOT EXISTS dh_wo_asset_ix ON dh_work_orders (asset_id);
+
+-- Work order status IN_PROGRESS (NEW -> PLANNED -> IN_PROGRESS -> DONE, moved by
+-- the APEX workflow "Work Order", 10_work_orders.sql). For a table created by an earlier version: widen the
+-- column and renew the check constraint. Safe to re-run.
+DECLARE
+  l_len NUMBER;
+  l_ok  NUMBER;
+BEGIN
+  SELECT data_length INTO l_len FROM user_tab_columns
+  WHERE  table_name = 'DH_WORK_ORDERS' AND column_name = 'STATUS';
+  IF l_len < 12 THEN
+    EXECUTE IMMEDIATE 'ALTER TABLE dh_work_orders MODIFY (status VARCHAR2(12))';
+  END IF;
+  SELECT COUNT(*) INTO l_ok FROM user_constraints
+  WHERE  table_name = 'DH_WORK_ORDERS' AND constraint_name = 'DH_WO_STATUS_CK'
+  AND    search_condition_vc LIKE '%IN_PROGRESS%';
+  IF l_ok = 0 THEN
+    BEGIN
+      EXECUTE IMMEDIATE 'ALTER TABLE dh_work_orders DROP CONSTRAINT dh_wo_status_ck';
+    EXCEPTION WHEN OTHERS THEN
+      IF SQLCODE <> -2443 THEN RAISE; END IF;      -- constraint does not exist
+    END;
+    EXECUTE IMMEDIATE q'[ALTER TABLE dh_work_orders ADD CONSTRAINT dh_wo_status_ck
+                         CHECK (status IN ('NEW','PLANNED','IN_PROGRESS','DONE','CANCELLED'))]';
+  END IF;
+END;
+/
 
 CREATE TABLE IF NOT EXISTS dh_maintenance (
   maint_id        VARCHAR2(20)  PRIMARY KEY,
