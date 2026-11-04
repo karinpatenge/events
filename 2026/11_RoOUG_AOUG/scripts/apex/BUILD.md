@@ -25,6 +25,7 @@ The application was exported in APEXlang format to the folder `emea-community-to
 | `<GENAI_SERVICE_NAME>`, `<GENAI_SERVICE_STATIC_ID>` | Name and static ID of the Generative AI Service in APEX |
 | `<GENAI_MODEL_ID>` | Chat model of OCI Generative AI that supports tool calling |
 | `<LOGO_URL>` | URL of the logo image in the application header |
+| `<APEX_USER>` | APEX user (or comma-separated users) who completes the work order tasks; no roles in this demo |
 
 Never write real values for these into files of the repository.
 
@@ -40,8 +41,9 @@ Never write real values for these into files of the repository.
 8. [Page 4 "Asset"](#8-page-4-asset)
 9. [AI Agent "Heat Network Ops Agent"](#9-ai-agent-heat-network-ops-agent)
 10. [Page 5 "Assistant"](#10-page-5-assistant)
-11. [Login page](#11-login-page)
-12. [Test](#12-test)
+11. [Work orders: workflow and pages 6 to 8](#11-work-orders-workflow-and-pages-6-to-8)
+12. [Login page](#12-login-page)
+13. [Test](#13-test)
 
 ---
 
@@ -56,6 +58,7 @@ Never write real values for these into files of the repository.
   | Property graph `DH_NETWORK` | `../sql/04_property_graphs.sql` | pages 2 and 3 |
   | Functions `AGENT_*`, package `DH_GRAPH_API` | `../sql/07_agent_api.sql` | page 3, AI Agent |
   | Views `DH_ASSET_STATUS_V`, `DH_PIPE_LINES_V`, `DH_OPEN_ANOMALIES_V`, `DH_TELEMETRY_RECENT_V`, procedure `DH_SET_VALVE` | `../sql/09_apex_support.sql` | pages 2–4 |
+  | View `DH_WORK_ORDERS_V`, function `DH_WORK_PLAN`, package `DH_WO_FLOW` (work order workflow), function `DH_BYPASS_FOR_ASSET` | `../sql/10_work_orders.sql` | pages 3, 6 and 8, workflow |
 
 - **The workspace** `<APEX_WORKSPACE>` has `<PARSING_SCHEMA>` as a workspace schema.
 - **For page 5 only:** an OCI user with an API key, and an IAM policy that lets this user use OCI Generative AI in `<OCI_COMPARTMENT_OCID>`, for example:
@@ -157,6 +160,7 @@ Every page has *Page Access Protection* = *Arguments Must Have Checksum*, *Form 
 | 30 | Incident | `fa-alert` | page 3 | Home | 3 |
 | 40 | Asset | `fa-gear` | page 4 | Home | 4 |
 | 50 | Assistant | `fa-chatbot` | page 5 | Home | 5 |
+| 60 | My tasks | `fa-tasks` | page 7 | Home | 7 |
 
 **Navigation Bar**: `&APP_USER.` (icon `fa-user`, user-defined attribute 2 = `has-username`) with the children `---` (URL `separator`) and *Sign Out* (icon `fa-sign-out`, URL `&LOGOUT_URL.`), both with the condition *User is Authenticated*.
 
@@ -164,7 +168,7 @@ Every page has *Page Access Protection* = *Arguments Must Have Checksum*, *Form 
 
 ### 4.3 Breadcrumb "Breadcrumb"
 
-Entries *Home* (page 1), *Network* (page 2, parent *Home*), *Incident* (page 3), *Asset* (page 4), *Assistant* (page 5), each linking to its page. Pages 2–5 show it in a region *Breadcrumb* (slot *Breadcrumb Bar*, template *Title Bar*, option *Use Current Breadcrumb Entry as Title*).
+Entries *Home* (page 1), *Network* (page 2, parent *Home*), *Incident* (page 3), *Asset* (page 4), *Assistant* (page 5), *Work order* (page 6, parent *Incident*), each linking to its page. Pages 2–5 show it in a region *Breadcrumb* (slot *Breadcrumb Bar*, template *Title Bar*, option *Use Current Breadcrumb Entry as Title*).
 
 ### 4.4 Other shared components
 
@@ -201,7 +205,7 @@ FROM  (SELECT 2 AS page_no, 'Network' AS title, 'Network graph and map, coloured
        FROM dual
        UNION ALL
        SELECT 4, 'Asset', 'Telemetry with limits, anomalies, maintenance', 'fa fa-gear dh-tile-asset',
-              (SELECT COUNT(*) FROM dh_work_orders WHERE status IN ('NEW', 'PLANNED')) || ' open work orders'
+              (SELECT COUNT(*) FROM dh_work_orders WHERE status IN ('NEW', 'PLANNED', 'IN_PROGRESS')) || ' open work orders'
        FROM dual
        UNION ALL
        SELECT 5, 'Assistant', 'Ask the operations agent', 'fa fa-chatbot dh-tile-assistant', NULL
@@ -231,7 +235,7 @@ The column `ICON` holds three classes: `fa`, the icon, and a class of our own (`
 
 ### 5.4 Page JavaScript (Execute when Page Loads)
 
-The same 30-second refresh as on page 2 (section 6.7). Page 1 has no regions with these Static IDs, so it does nothing here; the badges are updated when the page is opened again.
+The same refresh as on page 2 (section 6.6), every 30 seconds. Page 1 has no regions with these Static IDs, so it does nothing here; the badges are updated when the page is opened again.
 
 ---
 
@@ -439,7 +443,7 @@ Click a card to open the asset.</p>
 
 The swatches and colours use CSS classes rather than `style` attributes in HTML expressions, so they also work with a strict Content Security Policy.
 
-### 6.6 Refresh every 30 seconds
+### 6.6 Refresh every 60 seconds
 
 Page JavaScript → *Execute when Page Loads*:
 
@@ -452,10 +456,10 @@ setInterval(function () {
     if (id === "map" && !r.getMapObject()) { return; }   // map not initialized yet
     try { r.refresh(); } catch (e) { apex.debug.warn("refresh " + id + ": " + e.message); }
   });
-}, 30000);
+}, 60000);
 ```
 
-Collapsed regions are skipped; a region that was collapsed when the page opened is drawn at the next refresh after it is expanded.
+A refresh rebuilds the graph from scratch, so expanded, moved or grouped vertices go back to the layout; every 60 seconds leaves time to explore it between two refreshes. Collapsed regions are skipped; a region that was collapsed when the page opened is drawn at the next refresh after it is expanded.
 
 ---
 
@@ -490,44 +494,35 @@ Default, *Function Body* (PL/SQL): the page opens on the asset that the root cau
 RETURN NVL(JSON_VALUE(agent_find_root_cause(), '$.incidents[0].root_cause_asset'), 'PS-04');
 ```
 
-Item **`P3_WO`**: Hidden (holds the number of a new work order for the success message).
+Item **`P3_BYPASS`**: Hidden. The bypass that matters for the selected asset, or empty. Computation (Before Header, after the default of `P3_ASSET_ID`), *Function Body*:
 
-Buttons in slot *Next*, template *Text with Icon*, *Icon Left*, *Warn on Unsaved Changes* = *Do Not Check*, action *Submit Page*:
+```sql
+RETURN dh_bypass_for_asset(:P3_ASSET_ID);
+```
 
-| Seq | Button name | Label | Icon | Server-side Condition (Rows returned) |
-|---|---|---|---|---|
-| 30 | `OPEN_BYP1` | Open BYP-1 (Hot) | `fa-unlock` | `SELECT 1 FROM dh_pipes WHERE pipe_id = 'BYP-1' AND valve_state = 'CLOSED'` |
-| 40 | `CLOSE_BYP1` | Close BYP-1 | `fa-lock` | `SELECT 1 FROM dh_pipes WHERE pipe_id = 'BYP-1' AND valve_state = 'OPEN'` |
-| 50 | `CREATE_WO` | Create work order | `fa-wrench` | – |
+`DH_BYPASS_FOR_ASSET` (`../sql/10_work_orders.sql`) returns a bypass when the asset is one of its ends, when the bypass leads into the area the asset supplies, or when the asset lies behind its end. For PS-04, PS-05, PS-06 and the substations behind PS-05 it is `BYP-1`; for the substations of PS-04 it is empty.
 
-Only one of the two valve buttons is visible at a time.
+Buttons in slot *Next*, template *Text with Icon*, *Icon Left*, *Warn on Unsaved Changes* = *Do Not Check*:
+
+| Seq | Button name | Label | Icon | Action | Server-side Condition (Rows returned) |
+|---|---|---|---|---|---|
+| 30 | `OPEN_BYPASS` | `Open bypass &P3_BYPASS.` (Hot) | `fa-unlock` | Submit Page | `SELECT 1 FROM dh_pipes WHERE pipe_id = :P3_BYPASS AND valve_state = 'CLOSED'` |
+| 40 | `CLOSE_BYPASS` | `Close bypass &P3_BYPASS.` | `fa-lock` | Submit Page | `SELECT 1 FROM dh_pipes WHERE pipe_id = :P3_BYPASS AND valve_state = 'OPEN'` |
+| 50 | `CREATE_WO` | `Create work order for &P3_ASSET_ID.` | `fa-wrench` | Redirect to Page in this Application: page **6**, Set Items `P6_ASSET_ID` = `&P3_ASSET_ID.`, Clear Cache `6` | `SELECT 1 FROM dh_assets WHERE asset_id = :P3_ASSET_ID AND health_status IN ('ALARM', 'WARNING')` |
+
+- The valve buttons appear only when a bypass leads into the area of the selected asset, and only one of the two at a time.
+- *Create work order* appears only for an asset in alarm or warning, and its label names the asset. It opens page 6, where the work order is described and placed ([section 11](#11-work-orders-workflow-and-pages-6-to-8)).
 
 Processes (Processing, *Execute Code*), each with *When Button Pressed*:
 
 | Seq | Process | Button | PL/SQL | Success message | Error message |
 |---|---|---|---|---|---|
-| 10 | Open BYP-1 | `OPEN_BYP1` | `dh_set_valve('BYP-1', 'OPEN');` | `BYP-1 is open. The supply returns within about 1.5 minutes.` | `Opening BYP-1 failed.` |
-| 20 | Close BYP-1 | `CLOSE_BYP1` | `dh_set_valve('BYP-1', 'CLOSED');` | `BYP-1 is closed.` | `Closing BYP-1 failed.` |
-| 30 | Create work order | `CREATE_WO` | see below | `Work order &P3_WO. created for &P3_ASSET_ID..` | `The work order could not be created.` |
-
-```sql
-DECLARE
-  l_json CLOB;
-BEGIN
-  l_json := dh_graph_api.create_work_order(
-              p_asset_id   => :P3_ASSET_ID,
-              p_priority   => 'P1',
-              p_title      => 'Repair ' || :P3_ASSET_ID,
-              p_details    => 'Created from APEX page 3',
-              p_created_by => 'APEX');
-  :P3_WO := JSON_VALUE(l_json, '$.wo_id');
-  IF :P3_WO IS NULL THEN
-    RAISE_APPLICATION_ERROR(-20001, JSON_VALUE(l_json, '$.error'));
-  END IF;
-END;
-```
+| 10 | Open bypass | `OPEN_BYPASS` | `dh_set_valve(:P3_BYPASS, 'OPEN');` | `&P3_BYPASS. is open. The supply returns within about 1.5 minutes.` | `Opening &P3_BYPASS. failed.` |
+| 20 | Close bypass | `CLOSE_BYPASS` | `dh_set_valve(:P3_BYPASS, 'CLOSED');` | `&P3_BYPASS. is closed.` | `Closing &P3_BYPASS. failed.` |
 
 Branch **Back to page 3**: after processing, to page 3. The simulation reads the valve state at its next tick, so the supply changes by itself.
+
+**Opening the bypass in the incident** (state `incident`): page 3 opens on PS-04 → *Mitigation options* shows "Open bypass valve BYP-1 (PS-06 -> PS-05)" → **Open bypass BYP-1** → after about 1.5 minutes the buildings behind PS-05 have heat again; *Mitigation options* then says "No closed bypass valve leads into the affected area", and the button changes to **Close bypass BYP-1**.
 
 ### 7.2 Region "Root cause and impact" (graph)
 
@@ -552,11 +547,11 @@ UNION
 SELECT *
 FROM   GRAPH_TABLE (
         dh_network
-        MATCH (w IS work_order WHERE w.status IN ('NEW', 'PLANNED')) -[t IS targets]-> (s IS asset WHERE s.asset_id = :P3_ASSET_ID)
+        MATCH (w IS work_order WHERE w.status IN ('NEW', 'PLANNED', 'IN_PROGRESS')) -[t IS targets]-> (s IS asset WHERE s.asset_id = :P3_ASSET_ID)
         COLUMNS (VERTEX_ID(w) AS id_a, EDGE_ID(t) AS id_e, VERTEX_ID(s) AS id_b))
 ```
 
-`ONE ROW PER STEP` turns each path into its single pipes; `UNION` removes the pipes that several paths share. The second part attaches the open anomalies of the asset, the third its open work orders (status `NEW` or `PLANNED`), each styled by its own rule below.
+`ONE ROW PER STEP` turns each path into its single pipes; `UNION` removes the pipes that several paths share. The second part attaches the open anomalies of the asset, the third its open work orders (status `NEW`, `PLANNED` or `IN_PROGRESS`), each styled by its own rule below.
 
 Columns `ID_A`, `ID_E`, `ID_B` as CLOB. Attributes as on page 2, with these differences: Display Size **100**, Height **500**, mode default *Fit to Screen* only, Layout **Hierarchical**, Rank Direction *Top to Bottom*, Ranker *Longest Path*, no vertex caption, no Expand.
 
@@ -924,20 +919,248 @@ Page alias `ASSISTANT`, template *Standard*. Page CSS (Inline):
   - Display As **Inline**, Container Selector `#ops-chat`
   - Quick Actions: `What is the situation in the network?`, `Why are the buildings cold?`, `What can we do right now for the hospital?`, `Which pump station will fail next if we do nothing?`
 
-## 11. Login page
+## 11. Work orders: workflow and pages 6 to 8
+
+A work order goes through four states. Every step forward is a task that a person completes in the app (human in the loop); the workflow then changes the status in the database:
+
+```text
+NEW ──(1) approve──► PLANNED ──(2) start work──► IN_PROGRESS ──(3) confirm done──► CLOSED
+  └──(1) reject──► CANCELLED                                   └─ the asset is repaired
+```
+
+| Step | Task (task definition) | Type | Status after the step |
+|---|---|---|---|
+| 1 | *Approve work order* (`WO_APPROVE`) | Approval task: Approve or Reject | `PLANNED`, or `CANCELLED` |
+| 2 | *Start work* (`WO_START`) | Action task: Complete | `IN_PROGRESS` |
+| 3 | *Confirm work done* (`WO_CLOSE`) | Action task: Complete | `DONE` in the table, shown as *Closed*; the asset is repaired |
+
+Closing step 3 repairs the asset in the simulation: a pump station runs again without bearing wear, a substation gets a working temperature sensor again, and the maintenance history gets an entry. The buildings behind it have heat again within about 1.5 minutes.
+
+Built from:
+
+- **Database** (`../sql/10_work_orders.sql`): view `DH_WORK_ORDERS_V` (work order with asset type, asset label and readable status), function `DH_WORK_PLAN` (what has to be done, from the asset type and its anomalies), package `DH_WO_FLOW` (create, status changes, close and repair).
+- **APEX**: three task definitions, one workflow, page 6 *Work order*, page 7 *My tasks* (unified task list), page 8 *Task details*.
+
+Prerequisites: `../sql/10_work_orders.sql` installed; the parsing schema needs the privilege `CREATE JOB` (granted by `../sql/00_admin_setup.sql`).
+
+There are no roles in this demo: every task is assigned to the APEX user that runs the demo, `<APEX_USER>` below (your APEX user name; several users as a comma-separated list).
+
+### 11.1 Task definitions
+
+Shared Components → *Workflows and Automations* → **Task Definitions** → *Create*. Create the first one, then the other two the same way.
+
+| Field | `WO_APPROVE` | `WO_START` | `WO_CLOSE` |
+|---|---|---|---|
+| Name | `Approve work order` | `Start work` | `Confirm work done` |
+| Type | **Approval Task** | **Action Task** | **Action Task** |
+| Subject | `Approve work order` | `Start work` | `Confirm work done` |
+| Static ID | `WO_APPROVE` | `WO_START` | `WO_CLOSE` |
+| Priority | 2 - High | 2 - High | 2 - High |
+| Potential Owner | `<APEX_USER>` | `<APEX_USER>` | `<APEX_USER>` |
+| Business Admin | `<APEX_USER>` | `<APEX_USER>` | `<APEX_USER>` |
+
+The workflow sets the subject of each task with the work order number and the asset (11.2), so these subjects are only fallbacks.
+
+Then, on each task definition's page:
+
+- **Settings → Task Details Page Number**: for `WO_APPROVE` click **Create Task Details Page** and note the number of the new page (here **8**; rename it *Task details*). For `WO_START` and `WO_CLOSE` enter the same page number: one details page for all three steps.
+- **Settings → Initiator Can Complete** (`WO_APPROVE` only): **On**. The person who places the work order also approves it in this demo; without this setting the approval task cannot be completed by its own initiator.
+- **Settings → Actions Source**: SQL Query
+  ```sql
+  SELECT * FROM dh_work_orders_v WHERE wo_id = :APEX$TASK_PK
+  ```
+- **Participants**: the Potential Owner and the Business Administrator from the dialog, Identity Type *User*, Value Type *Static*.
+- No parameters and no actions: the status changes are done by the workflow.
+
+### 11.2 Workflow "Work Order"
+
+Shared Components → *Workflows and Automations* → **Workflows** → *Create*.
+
+**Workflow**: Name `Work Order`, Title `Work order &WO_ID. for &ASSET_TYPE_NAME. &ASSET_ID.`, Static ID `WORK_ORDER`.
+
+**Version** (the node below the workflow, version `1.0`): under **Additional Data**, the source of the workflow's detail row: Table `DH_WORK_ORDERS_V`, primary key column `WO_ID`. The columns of this row (`WO_ID`, `ASSET_ID`, `ASSET_TYPE_NAME`, `TITLE`, …) can then be used as substitution strings in the activities, and `:APEX$WORKFLOW_DETAIL_PK` is the number of the work order.
+
+**Variables** (right-click the version → *Create Variable*):
+
+| Static ID | Label | Data Type | Value |
+|---|---|---|---|
+| `WO_ID` | Work order | Number | Type *Expression*, PL/SQL `:APEX$WORKFLOW_DETAIL_PK` |
+| `TASK_ID` | Task | Number | Null |
+
+`TASK_OUTCOME` and `APPROVER` are created by APEX with the first *Human Task - Create* activity.
+
+**Participants** (right-click the version → *Create Participant*): *Workflow Owner* and *Workflow Administrator*, both Value Type *Static*, Value `<APEX_USER>`. An active workflow version needs both.
+
+**Activities** (right-click the version → *Create Activity*; connect them in this order with *Create Connection*). In every *Human Task - Create* activity set **Task ID Item** `TASK_ID` and **Details Primary Key Item** `WO_ID`.
+
+| # | Name | Type | Settings | Next |
+|---|---|---|---|---|
+| 1 | Start | Workflow Start | – | 2 |
+| 2 | Approve work order | Human Task - Create | Definition `Approve work order`; Subject `Approve work order &WO_ID. for &ASSET_TYPE_NAME. &ASSET_ID.: &TITLE.`; Outcome `TASK_OUTCOME`; Owner `APPROVER` | 3 |
+| 3 | Approved? | Workflow Switch | Type *True False Check*, Condition *Expression*, PL/SQL `:TASK_OUTCOME = 'APPROVED'` | True → 4, False → 10 |
+| 4 | Status PLANNED | Execute Code | `dh_wo_flow.set_status(:APEX$WORKFLOW_DETAIL_PK, 'PLANNED');` | 5 |
+| 5 | Start work | Human Task - Create | Definition `Start work`; Subject `Start work on work order &WO_ID. for &ASSET_TYPE_NAME. &ASSET_ID.: &TITLE.` | 6 |
+| 6 | Status IN_PROGRESS | Execute Code | `dh_wo_flow.set_status(:APEX$WORKFLOW_DETAIL_PK, 'IN_PROGRESS');` | 7 |
+| 7 | Confirm work done | Human Task - Create | Definition `Confirm work done`; Subject `Confirm work done for work order &WO_ID. for &ASSET_TYPE_NAME. &ASSET_ID.: &TITLE.` | 8 |
+| 8 | Close and repair | Execute Code | `dh_wo_flow.close_work_order(:APEX$WORKFLOW_DETAIL_PK);` | 9 |
+| 9 | Closed | Workflow End | – | – |
+| 10 | Status CANCELLED | Execute Code | `dh_wo_flow.set_status(:APEX$WORKFLOW_DETAIL_PK, 'CANCELLED');` | 11 |
+| 11 | Cancelled | Workflow End | – | – |
+
+*Show Messages* must list no errors; then **Save**, and right-click the version → **Activate**.
+
+The task subjects name the work order, what it is about and whether it is a pump station or a substation, for example *Approve work order 202 for Pump station PS-04: Repair pump station PS-04*, or for a work order of the AI agent *Approve work order 182 for Pump station PS-08: Pre-emptive maintenance for PS-08*.
+
+### 11.3 Page 7 "My tasks" (unified task list)
+
+*Create Page* → **Unified Task List** → Report Context **My Tasks**, page number **7**, name `My tasks`, navigation: new entry in the *Navigation Menu* (label `My tasks`, icon `fa-tasks`, parent *Home*, after *Assistant*). The page lists the open tasks of the current user; a click on a task opens page 8.
+
+### 11.4 Page 8 "Task details"
+
+Generated in 11.1. It shows the task (subject, state, history) with the buttons of the task type: *Approve* and *Reject* for step 1, *Complete* for steps 2 and 3. Add the work order and the link to the incident view:
+
+1. Hidden item **`P8_WO_ID`**, computation Before Header, SQL Query:
+   ```sql
+   SELECT TO_NUMBER(detail_pk) FROM apex_tasks WHERE task_id = :P8_TASK_ID
+   ```
+   Hidden item **`P8_ASSET_ID`**, computation after it: `SELECT asset_id FROM dh_work_orders WHERE wo_id = :P8_WO_ID`.
+2. Region **Work order** (Classic Report, template *Value Attribute Pairs – Column*, *Left Aligned*), above the generated regions:
+   ```sql
+   SELECT wo_id           AS "Work order",
+          asset_type_name AS "Asset type",
+          asset_label     AS "Asset",
+          district        AS "District",
+          priority        AS "Priority",
+          title           AS "Title",
+          details         AS "What has to be done",
+          status_label    AS "Status"
+   FROM   dh_work_orders_v
+   WHERE  wo_id = :P8_WO_ID
+   ```
+   Page Items to Submit `P8_WO_ID`.
+3. Button **`INCIDENT`** in that region: label `Open incident view for &P8_ASSET_ID.`, icon `fa-alert`, action *Redirect to Page in this Application*, page 3, Set Items `P3_ASSET_ID` = `&P8_ASSET_ID.`. Server-side Condition *Rows returned*:
+   ```sql
+   SELECT 1 FROM apex_tasks WHERE task_id = :P8_TASK_ID AND subject LIKE 'Confirm work done%'
+   ```
+   The button belongs to the last step: there it opens page 3 with the subgraph of the asset being repaired. After *Complete*, the graph turns from red to green within about 1.5 minutes.
+
+If the generated page names its task item differently, use that name instead of `P8_TASK_ID`.
+
+### 11.5 Page 6 "Work order"
+
+Blank page, number **6**, name `Work order`, template *Standard*, breadcrumb entry *Work order* (parent *Incident*). It is opened from page 3 (*Create work order for …*, with `P6_ASSET_ID`) or from page 4 (a work order of the list, with `P6_WO_ID`).
+
+**Items**
+
+| Item | Type | Settings |
+|---|---|---|
+| `P6_WO_ID` | Hidden | – |
+| `P6_ASSET_ID` | Hidden | – |
+| `P6_WORKFLOW_ID` | Hidden | – |
+| `P6_STATUS` | Hidden | – |
+| `P6_PRIORITY` | Select List | Label `Priority`; static values `P1 – people without heat now;P1,P2 – failure within 48 h;P2,P3 – failure within 10 days;P3,P4 – check;P4`; Default *Function Body* `RETURN dh_wo_flow.default_priority(:P6_ASSET_ID);` |
+| `P6_TITLE` | Text Field | Label `Title`, width 80; Default *Function Body* `RETURN dh_wo_flow.default_title(:P6_ASSET_ID);` |
+| `P6_DETAILS` | Textarea | Label `What has to be done`, 4 rows; Default *Function Body* `RETURN dh_work_plan(:P6_ASSET_ID);` |
+
+`P6_PRIORITY`, `P6_TITLE` and `P6_DETAILS`: *Read Only* when `P6_WO_ID` is not null (the work order is placed).
+
+**Pre-rendering** process **Load work order** (Before Header, Execute Code, Server-side Condition *Item is NOT NULL* `P6_WO_ID`):
+
+```sql
+SELECT asset_id, priority, title, details, status, workflow_id
+INTO   :P6_ASSET_ID, :P6_PRIORITY, :P6_TITLE, :P6_DETAILS, :P6_STATUS, :P6_WORKFLOW_ID
+FROM   dh_work_orders_v
+WHERE  wo_id = :P6_WO_ID;
+```
+
+**Region "Asset"** (Classic Report, template *Value Attribute Pairs – Column*, *Left Aligned*, Page Items to Submit `P6_ASSET_ID`). It makes clear whether the work order is for a pump station or a substation:
+
+```sql
+SELECT CASE asset_type WHEN 'PUMP_STATION' THEN 'Pump station' WHEN 'SUBSTATION' THEN 'Substation' END AS "Asset type",
+       asset_id || ' (' || name || ')' AS "Asset",
+       district                        AS "District",
+       health_status                   AS "Health",
+       health_reason                   AS "Reason"
+FROM   dh_asset_status_v
+WHERE  asset_id = :P6_ASSET_ID
+```
+
+**Region "Work order"** (Static Content, template *Standard*) with the items `P6_PRIORITY`, `P6_TITLE`, `P6_DETAILS`, and the buttons:
+
+| Button | Label | Action | Server-side Condition |
+|---|---|---|---|
+| `PLACE` (Hot) | `Place work order` | Submit Page | Item is NULL `P6_WO_ID` |
+| `START_WF` | `Start workflow` | Submit Page | Rows returned `SELECT 1 FROM dh_work_orders WHERE wo_id = :P6_WO_ID AND status = 'NEW' AND workflow_id IS NULL` (work orders of the AI agent) |
+| `TASKS` | `Open my tasks` | Redirect to page 7 | Item is NOT NULL `P6_WO_ID` |
+| `INCIDENT` | `Incident view for &P6_ASSET_ID.` | Redirect to page 3, Set Items `P3_ASSET_ID` = `&P6_ASSET_ID.` | – |
+
+**Region "Progress"** (Classic Report, template **Badge List**, Static ID `wo_progress`, Server-side Condition Item is NOT NULL `P6_WO_ID`, Page Items to Submit `P6_WO_ID`): one badge per step, ✓ done, ● current, – still open.
+
+```sql
+SELECT CASE WHEN n >= 1 THEN '✓' END                                              AS "New",
+       CASE WHEN n >= 2 THEN '✓' WHEN n = 1 THEN '●' ELSE '–' END                   AS "Planned",
+       CASE WHEN n >= 3 THEN '✓' WHEN n = 2 THEN '●' ELSE '–' END                   AS "In progress",
+       CASE WHEN n = 4 THEN '✓' WHEN n = 3 THEN '●' ELSE '–' END                    AS "Closed",
+       status_label                                                                 AS "Status"
+FROM  (SELECT status_label,
+              DECODE(status, 'NEW', 1, 'PLANNED', 2, 'IN_PROGRESS', 3, 'DONE', 4, 0) AS n
+       FROM   dh_work_orders_v
+       WHERE  wo_id = :P6_WO_ID)
+```
+
+Page JavaScript → *Execute when Page Loads*, so the progress follows the tasks completed on pages 7 and 8:
+
+```js
+setInterval(function () {
+  if (document.hidden) { return; }
+  var r = apex.region("wo_progress");
+  if (r) { r.refresh(); }
+}, 10000);
+```
+
+**Processing** (in this order):
+
+| Seq | Process | Type | Settings | Server-side Condition |
+|---|---|---|---|---|
+| 10 | Create work order | Execute Code | `:P6_WO_ID := dh_wo_flow.create_work_order(:P6_ASSET_ID, :P6_PRIORITY, :P6_TITLE, :P6_DETAILS);` | When Button Pressed `PLACE` |
+| 20 | Start workflow | **Workflow**, Type **Start** | Definition `Work Order`; Details Primary Key Item `P6_WO_ID`; Workflow ID Item `P6_WORKFLOW_ID` | Request is contained in Value `PLACE,START_WF` |
+| 30 | Remember workflow | Execute Code | `dh_wo_flow.set_workflow(:P6_WO_ID, :P6_WORKFLOW_ID);` | Request is contained in Value `PLACE,START_WF` |
+
+Success message of process 30: `Work order &P6_WO_ID. placed. The first step is waiting in My tasks.` Branch after processing: page 6, Set Items `P6_WO_ID` = `&P6_WO_ID.`.
+
+### 11.6 Links from page 4
+
+In the report *Work orders* of page 4, add the column `WO_ID AS wo_id` (hidden) and give the column *No.* a link: page 6, Set Items `P6_WO_ID` = `#WO_ID#`, Clear Cache `6`. A click opens the work order with its progress; work orders of the AI agent show *Start workflow* there.
+
+### 11.7 The sequence in the demo
+
+State `incident`, page 3 on PS-04:
+
+1. **Create work order for PS-04** → page 6: asset type *Pump station*, what has to be done (bearing, alignment, restart), priority P1 → **Place work order**.
+2. **Open my tasks** → page 7: *Approve work order …* → page 8 → **Approve**. Status *Planned*.
+3. Page 7: *Start work on work order …* → **Complete**. Status *In progress*.
+4. Page 7: *Confirm work done for work order …* → page 8 → **Open incident view for PS-04** to show the red subgraph, back, **Complete**. Status *Closed*, PS-04 is repaired.
+5. Page 3 on PS-04: within about 1.5 minutes the subgraph turns green; the anomalies close one minute after their condition is gone.
+
+For the stuck sensor the same with SS-09.3: *Substation*, "Replace the temperature sensor of the secondary supply", P4.
+
+---
+
+## 12. Login page
 
 Page 9999, created by the application wizard and unchanged: region with template *Login* and the application name, items Username, Password, Remember username, button *Sign In*, processes *Set Username Cookie*, *Login*, *Clear Page(s) Cache*, *Get Username Cookie*.
 
 ---
 
-## 12. Test
+## 13. Test
 
 | Page | Check |
 |---|---|
 | 1 | Four tiles in four colours; badges with the number of cold buildings, open anomalies and open work orders |
-| 2 | Graph in radial layout, labels readable; switch *Show buildings* on: 252 vertices in the graph, building layer and legend entry on the map; off: 52 vertices, no building layer. Map zoomed to the network. Anomaly cards coloured by type; a click opens page 4 for the asset and metric. Regions refresh every 30 seconds |
-| 3 | Opens on the root-cause asset; graph from the asset down to its buildings, anomalies and open work orders attached; *Impact* and *Mitigation options* side by side below the graph; *Open BYP-1* only while the valve is closed, *Close BYP-1* only while it is open; *Create work order* shows the new number |
+| 2 | Graph in radial layout, labels readable; switch *Show buildings* on: 252 vertices in the graph, building layer and legend entry on the map; off: 52 vertices, no building layer. Map zoomed to the network. Anomaly cards coloured by type; a click opens page 4 for the asset and metric. Regions refresh every 60 seconds |
+| 3 | Opens on the root-cause asset; graph from the asset down to its buildings, anomalies and open work orders attached; *Impact* and *Mitigation options* side by side below the graph; *Open bypass BYP-1* for PS-04 while the valve is closed, *Close bypass BYP-1* while it is open, no bypass button for SS-04.1; *Create work order for PS-04* only for assets in alarm or warning |
 | 4 | Asset and metric selection; both charts with dashed warning and alarm limits; reports for anomalies, work orders, maintenance; *Incident view* opens page 3 for the asset |
 | 5 | Welcome message and quick actions; "What is the situation in the network?" answers with the headings Situation / Root cause / Impact / Recommended actions; asking for a work order shows the approval dialog before anything is written |
+| 6–8 | From page 3: *Create work order for PS-04* → page 6 shows *Pump station*, what has to be done and P1 → *Place work order* → page 7 lists *Approve work order …* → *Approve* (Planned) → *Start work …* → *Complete* (In progress) → *Confirm work done …* with *Open incident view for PS-04* → *Complete* (Closed); page 6 shows the progress; PS-04 runs again and its buildings have heat within about 1.5 minutes |
 
 Test the Generative AI Service first (section 2.2) if page 5 shows an error.
