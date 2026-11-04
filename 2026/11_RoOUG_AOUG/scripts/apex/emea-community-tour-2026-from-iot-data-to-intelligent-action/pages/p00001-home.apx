@@ -81,7 +81,7 @@ page 1 (
                        FROM dual
                        UNION ALL
                        SELECT 4, 'Asset', 'Telemetry with limits, anomalies, maintenance', 'fa fa-gear dh-tile-asset',
-                              (SELECT COUNT(*) FROM dh_work_orders WHERE status IN ('NEW', 'PLANNED')) || ' open work orders'
+                              (SELECT COUNT(*) FROM dh_work_orders WHERE status IN ('NEW', 'PLANNED', 'IN_PROGRESS')) || ' open work orders'
                        FROM dual
                        UNION ALL
                        SELECT 5, 'Assistant', 'Ask the operations agent', 'fa fa-chatbot dh-tile-assistant', NULL
