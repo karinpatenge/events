@@ -2,7 +2,7 @@
 -- 08_jobs.sql
 --
 -- Author:      Karin Patenge
--- Last update: 2026-10-28
+-- Last update: 2026-11-04
 --
 -- One scheduler job, DH_TICK_JOB, every 30 seconds:
 --   1. device simulation: readings for 50 twins, stored and/or posted to the
@@ -86,6 +86,18 @@ BEGIN
   END IF;
 END;
 /
+
+-- Work orders are moved on by people, through the APEX workflow "Work Order"
+-- (10_work_orders.sql, scripts/apex/BUILD.md). The automatic job of an earlier
+-- version (DH_WO_JOB) and its setting are removed here.
+BEGIN
+  DBMS_SCHEDULER.DROP_JOB('DH_WO_JOB', force => TRUE);
+EXCEPTION WHEN OTHERS THEN
+  IF SQLCODE <> -27475 THEN RAISE; END IF;          -- job does not exist
+END;
+/
+DELETE FROM dh_config WHERE name = 'WO_AUTO_PROGRESS';
+COMMIT;
 
 -- Start before the session:  EXEC DBMS_SCHEDULER.ENABLE('DH_TICK_JOB');
 -- Stop after the session:    EXEC DBMS_SCHEDULER.DISABLE('DH_TICK_JOB', force => TRUE);
