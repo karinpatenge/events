@@ -12,7 +12,7 @@ The export of the application is in the folder `emea-community-tour-2026-from-io
 
 ### 1 Home
 
-The start page. Four tiles lead to the other pages, each with a live count: how many buildings are cold, how many anomalies are open, how many work orders are open.
+The start page. Five tiles lead to *Network*, *Incident*, *Asset*, *Assistant* and *Work orders* (page 9), with live counts: how many buildings are cold, how many anomalies are open, how many assets are in alarm or warning, how many work orders are open.
 
 ### 2 Network
 
@@ -31,7 +31,7 @@ One incident in detail, for the asset selected at the top; it opens on the asset
 - **Impact:** how many buildings and apartments the asset supplies, how many would be cold if it fails, and which critical buildings (hospital, nursing home, school) are affected.
 - **Mitigation options:** which bypass valve could supply part of the area instead, and how many buildings would still be cold.
 
-If a bypass leads into the area of the asset, a button opens or closes it (*Open bypass BYP-1*). For an asset in alarm or warning, *Create work order for …* opens page 6.
+If a bypass leads into the area of the asset, a button opens or closes it (*Open bypass BYP-1*). For an asset in alarm or warning, *Create work order for …* opens page 6; if the asset already has an open work order, *Open work order …* opens that one instead.
 
 ### 4 Asset
 
@@ -58,13 +58,17 @@ The workflow **Work order** takes it through three steps with a person in the lo
 
 There are no roles: the signed-in user does every step.
 
-### 7 My tasks
+### 7 Tasks
 
-The task list of the signed-in user: the open workflow steps, with *Approve*, *Reject* or *Complete*.
+The task list of the signed-in user: the open workflow steps, with *Approve* or *Reject*; on the task page the other steps have *Set to In progress* or *Set to Closed*.
 
 ### 8 Task details
 
 One task with its work order: asset, type, priority, what must be done, and in the last step the link to page 3.
+
+### 9 Work orders
+
+All work orders, open and closed: number, creation time, asset type (pump station or substation), asset, district, priority, title, status, whether the workflow is running, and who created it (the app or the AI agent). Open work orders come first; *Not started* marks a work order of the AI agent whose workflow still has to be started. A click on the number opens the work order on page 6.
 
 ### Login
 

@@ -317,7 +317,7 @@ The *Data* tab of the twins now changes every 30 seconds (reload the page).
 
 ## 7. Optional: APEX application
 
-An operator app with eight pages: home tiles, network graph and map, incident analysis with bypass and work order buttons, asset telemetry with limits, a chat with an APEX AI Agent that uses the same `AGENT_*` tools, and work orders that go through an APEX workflow with three approval steps (page 6, task list on page 7, task details on page 8).
+An operator app with nine pages: home tiles, network graph and map, incident analysis with bypass and work order buttons, asset telemetry with limits, a chat with an APEX AI Agent that uses the same `AGENT_*` tools, and work orders that go through an APEX workflow with three approval steps (work order on page 6, task list on page 7, task details on page 8, list of all work orders on page 9).
 
 - [`apex/README.md`](apex/README.md): what each page shows.
 - [`apex/BUILD.md`](apex/BUILD.md): prerequisites (APEX 26.1, Graph Visualization plug-in, Web Credential and Generative AI Service) and every component, to import the APEXlang export from `apex/` or to build the app by hand.
