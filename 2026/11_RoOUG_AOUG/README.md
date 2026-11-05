@@ -22,8 +22,8 @@ The answer: two problems, not 45. Open a bypass and the hospital and nursing hom
 | Path | Content |
 |---|---|
 | `presentation/` | The slides of the session as PDF |
-| `media/01_teaser.mp4` | Teaser video, 50 seconds, English |
-| `media/01_teaser_de.mp4`, `media/01_teaser_ro.mp4` | The same teaser in German (Vienna) and Romanian (Bucharest) |
+| `media/01_teaser_en.mp4` | Teaser video, 50 seconds, English |
+| `media/01_teaser_at.mp4`, `media/01_teaser_ro.mp4` | The same teaser in German (Vienna) and Romanian (Bucharest) |
 | `media/octemea26*` | Logo and icons of the EMEA Community Tour 2026 |
 | `scripts/` | All demo code, with step-by-step instructions in [`scripts/README.md`](scripts/README.md) |
 | `scripts/sql/` | Install, simulation, analytics, property graphs, agent tools, demo states, tests, teardown |
