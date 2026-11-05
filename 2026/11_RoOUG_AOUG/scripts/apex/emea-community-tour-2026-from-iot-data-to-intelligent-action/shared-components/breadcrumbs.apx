@@ -53,6 +53,19 @@ breadcrumb breadcrumb (
         }
     )
 
+    entry my-tasks (
+        name: Tasks
+        pageNumber: 7
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 7
+            }
+        }
+    )
+
     entry network (
         name: Network
         pageNumber: 2
@@ -65,6 +78,35 @@ breadcrumb breadcrumb (
         link {
             target: {
                 page: 2
+            }
+        }
+    )
+
+    entry work-order (
+        name: Work order
+        pageNumber: 6
+        execution {
+            sequence: 10
+        }
+        appearance {
+            parentEntry: @work-orders
+        }
+        link {
+            target: {
+                page: 6
+            }
+        }
+    )
+
+    entry work-orders (
+        name: Work orders
+        pageNumber: 9
+        execution {
+            sequence: 10
+        }
+        link {
+            target: {
+                page: 9
             }
         }
     )

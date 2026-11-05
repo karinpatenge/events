@@ -1,0 +1,618 @@
+page 6 (
+    name: Work order
+    alias: WORK-ORDER
+    title: Work order
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    javaScript {
+        executeWhenPageLoads:
+            ```javascript-browser
+            setInterval(function () {
+              if (document.hidden) { return; }                       // tab in the background
+              var r = apex.region("wo_progress");                    // null if the work order is not placed yet
+              if (r) { r.refresh(); }
+            }, 10000);
+            ```
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region asset (
+        name: Asset
+        type: classicReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT CASE asset_type WHEN 'PUMP_STATION' THEN 'Pump station' WHEN 'SUBSTATION' THEN 'Substation' END AS "Asset type",
+                       asset_id || ' (' || name || ')' AS "Asset",
+                       district                        AS "District",
+                       health_status                   AS "Health",
+                       health_reason                   AS "Reason"
+                FROM   dh_asset_status_v
+                WHERE  asset_id = :P6_ASSET_ID
+                ```
+            pageItemsToSubmit: P6_ASSET_ID
+        }
+        layout {
+            sequence: 10
+            slot: body
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+        componentAppearance {
+            template: @/value-attribute-pairs-column
+            templateOptions: [
+                #DEFAULT#
+                t-AVPList--leftAligned
+            ]
+        }
+        pagination {
+            type: nextAndPreviousLinks
+        }
+        messages {
+            whenNoDataFound: No asset selected.
+        }
+
+        column Asset (
+            reportColumnQueryId: 2
+            derivedColumn: N
+            heading {
+                heading: Asset
+            }
+            layout {
+                sequence: 20
+            }
+        )
+
+        column "Asset type" (
+            reportColumnQueryId: 1
+            derivedColumn: N
+            heading {
+                heading: Asset type
+            }
+            layout {
+                sequence: 10
+            }
+        )
+
+        column District (
+            reportColumnQueryId: 3
+            derivedColumn: N
+            heading {
+                heading: District
+            }
+            layout {
+                sequence: 30
+            }
+        )
+
+        column Health (
+            reportColumnQueryId: 4
+            derivedColumn: N
+            heading {
+                heading: Health
+            }
+            layout {
+                sequence: 40
+            }
+        )
+
+        column Reason (
+            reportColumnQueryId: 5
+            derivedColumn: N
+            heading {
+                heading: Reason
+            }
+            layout {
+                sequence: 50
+            }
+        )
+
+    )
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/title-bar
+            templateOptions: [
+                #DEFAULT#
+                t-BreadcrumbRegion--useBreadcrumbTitle
+            ]
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region progress (
+        name: Progress
+        type: classicReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT CASE WHEN n >= 1 THEN '✓' END                                              AS "New",
+                       CASE WHEN n >= 2 THEN '✓' WHEN n = 1 THEN '●' ELSE '–' END                   AS "Planned",
+                       CASE WHEN n >= 3 THEN '✓' WHEN n = 2 THEN '●' ELSE '–' END                   AS "In progress",
+                       CASE WHEN n = 4 THEN '✓' WHEN n = 3 THEN '●' ELSE '–' END                    AS "Closed",
+                       status_label                                                                 AS "Status"
+                FROM  (SELECT status_label,
+                              DECODE(status, 'NEW', 1, 'PLANNED', 2, 'IN_PROGRESS', 3, 'DONE', 4, 0) AS n
+                       FROM   dh_work_orders_v
+                       WHERE  wo_id = :P6_WO_ID)
+                ```
+            pageItemsToSubmit: P6_WO_ID
+        }
+        layout {
+            sequence: 30
+            slot: body
+        }
+        appearance {
+            template: @/standard
+            templateOptions: #DEFAULT#
+        }
+        advanced {
+            htmlDomId: wo_progress
+        }
+        serverSideCondition {
+            type: itemIsNotNull
+            item: P6_WO_ID
+        }
+        componentAppearance {
+            template: @/badge-list
+            templateOptions: #DEFAULT#
+        }
+        pagination {
+            type: nextAndPreviousLinks
+        }
+
+        column Closed (
+            reportColumnQueryId: 4
+            derivedColumn: N
+            heading {
+                heading: Closed
+            }
+            layout {
+                sequence: 40
+            }
+        )
+
+        column "In progress" (
+            reportColumnQueryId: 3
+            derivedColumn: N
+            heading {
+                heading: In progress
+            }
+            layout {
+                sequence: 30
+            }
+        )
+
+        column New (
+            reportColumnQueryId: 1
+            derivedColumn: N
+            heading {
+                heading: New
+            }
+            layout {
+                sequence: 10
+            }
+        )
+
+        column Planned (
+            reportColumnQueryId: 2
+            derivedColumn: N
+            heading {
+                heading: Planned
+            }
+            layout {
+                sequence: 20
+            }
+        )
+
+        column Status (
+            reportColumnQueryId: 5
+            derivedColumn: N
+            heading {
+                heading: Status
+            }
+            layout {
+                sequence: 50
+            }
+        )
+
+    )
+
+    region work-order (
+        name: Work order
+        type: staticContent
+        layout {
+            sequence: 20
+            slot: body
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+    )
+
+    pageItem P6_ASSET_ID (
+        type: hidden
+        layout {
+            sequence: 20
+            region: @work-order
+            slot: regionBody
+        }
+    )
+
+    pageItem P6_DETAILS (
+        type: textarea
+        label {
+            label: What has to be done
+            alignment: left
+        }
+        layout {
+            sequence: 70
+            region: @work-order
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            width: 80
+            height: 4
+        }
+        validation {
+            maxLength: 4000
+        }
+        default {
+            type: functionBody
+            plsqlFunctionBody: RETURN dh_work_plan(:P6_ASSET_ID);
+        }
+        readOnly {
+            type: itemIsNotNull
+            item: P6_WO_ID
+        }
+    )
+
+    pageItem P6_PRIORITY (
+        type: selectList
+        label {
+            label: Priority
+            alignment: left
+        }
+        lov {
+            type: staticValues
+            staticValues: STATIC2:P1 – people without heat now;P1,P2 – failure within 48 h;P2,P3 – failure within 10 days;P3,P4 – check;P4
+            displayExtraValues: false
+            displayNullValue: false
+        }
+        layout {
+            sequence: 50
+            region: @work-order
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            height: 1
+        }
+        default {
+            type: functionBody
+            plsqlFunctionBody: RETURN dh_wo_flow.default_priority(:P6_ASSET_ID);
+        }
+        readOnly {
+            type: itemIsNotNull
+            item: P6_WO_ID
+        }
+    )
+
+    pageItem P6_STATUS (
+        type: hidden
+        layout {
+            sequence: 40
+            region: @work-order
+            slot: regionBody
+        }
+    )
+
+    pageItem P6_TITLE (
+        type: textField
+        label {
+            label: Title
+            alignment: left
+        }
+        layout {
+            sequence: 60
+            region: @work-order
+            slot: regionBody
+            alignment: left
+        }
+        appearance {
+            template: @/optional-floating
+            templateOptions: #DEFAULT#
+            width: 80
+        }
+        validation {
+            maxLength: 200
+        }
+        default {
+            type: functionBody
+            plsqlFunctionBody: RETURN dh_wo_flow.default_title(:P6_ASSET_ID);
+        }
+        readOnly {
+            type: itemIsNotNull
+            item: P6_WO_ID
+        }
+    )
+
+    pageItem P6_WORKFLOW_ID (
+        type: hidden
+        layout {
+            sequence: 30
+            region: @work-order
+            slot: regionBody
+        }
+    )
+
+    pageItem P6_WO_ID (
+        type: hidden
+        layout {
+            sequence: 10
+            region: @work-order
+            slot: regionBody
+        }
+    )
+
+    button incident (
+        buttonName: INCIDENT
+        label: Incident view for &P6_ASSET_ID.
+        layout {
+            sequence: 40
+            region: @work-order
+            slot: next
+        }
+        appearance {
+            buttonTemplate: @/text-with-icon
+            templateOptions: [
+                #DEFAULT#
+                t-Button--iconLeft
+            ]
+            icon: fa-alert
+        }
+        behavior {
+            action: redirectThisApp
+            target: {
+                page: 3
+                items: {
+                    P3_ASSET_ID: &P6_ASSET_ID.
+                }
+            }
+            warnOnUnsavedChanges: doNotCheck
+        }
+        serverSideCondition {
+            type: itemIsNotNull
+            item: P6_ASSET_ID
+        }
+    )
+
+    button place (
+        buttonName: PLACE
+        label: Place work order
+        layout {
+            sequence: 10
+            region: @work-order
+            slot: next
+        }
+        appearance {
+            buttonTemplate: @/text-with-icon
+            hot: true
+            templateOptions: [
+                #DEFAULT#
+                t-Button--iconLeft
+            ]
+            icon: fa-wrench
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+        serverSideCondition {
+            type: itemIsNull
+            item: P6_WO_ID
+        }
+    )
+
+    button start-wf (
+        buttonName: START_WF
+        label: Start workflow
+        layout {
+            sequence: 20
+            region: @work-order
+            slot: next
+        }
+        appearance {
+            buttonTemplate: @/text-with-icon
+            hot: true
+            templateOptions: [
+                #DEFAULT#
+                t-Button--iconLeft
+            ]
+            icon: fa-play
+        }
+        behavior {
+            warnOnUnsavedChanges: doNotCheck
+        }
+        serverSideCondition {
+            type: rowsReturned
+            sqlQuery: SELECT 1 FROM dh_work_orders WHERE wo_id = :P6_WO_ID AND status = 'NEW' AND workflow_id IS NULL
+        }
+    )
+
+    button tasks (
+        buttonName: TASKS
+        label: Open tasks
+        layout {
+            sequence: 30
+            region: @work-order
+            slot: next
+        }
+        appearance {
+            buttonTemplate: @/text-with-icon
+            templateOptions: [
+                #DEFAULT#
+                t-Button--iconLeft
+            ]
+            icon: fa-tasks
+        }
+        behavior {
+            action: redirectThisApp
+            target: {
+                page: 7
+            }
+            warnOnUnsavedChanges: doNotCheck
+        }
+        serverSideCondition {
+            type: itemIsNotNull
+            item: P6_WO_ID
+        }
+    )
+
+    validation no-open-work-order (
+        name: No open work order for the asset
+        execution {
+            sequence: 10
+        }
+        validation {
+            type: noRowsReturned
+            sqlQuery: SELECT 1 FROM dh_work_orders WHERE asset_id = :P6_ASSET_ID AND status IN ('NEW', 'PLANNED', 'IN_PROGRESS')
+        }
+        error {
+            errorMessage: &P6_ASSET_ID. already has an open work order. Open it from page 3 or page 4 instead of placing a new one.
+            displayLocation: inlineInNotification
+        }
+        serverSideCondition {
+            whenButtonPressed: @place
+        }
+    )
+
+    process create-work-order (
+        name: Create work order
+        type: executeCode
+        source {
+            plsqlCode: :P6_WO_ID := dh_wo_flow.create_work_order(:P6_ASSET_ID, :P6_PRIORITY, :P6_TITLE, :P6_DETAILS);
+        }
+        execution {
+            sequence: 10
+        }
+        error {
+            errorMessage: The work order could not be created.
+        }
+        advanced {
+            executionMappingIdentifier: 14464268222528213
+        }
+        serverSideCondition {
+            whenButtonPressed: @place
+        }
+    )
+
+    process load-work-order (
+        name: Load work order
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                SELECT asset_id, priority, title, details, status, workflow_id
+                INTO   :P6_ASSET_ID, :P6_PRIORITY, :P6_TITLE, :P6_DETAILS, :P6_STATUS, :P6_WORKFLOW_ID
+                FROM   dh_work_orders_v
+                WHERE  wo_id = :P6_WO_ID;
+                ```
+        }
+        execution {
+            sequence: 10
+            point: beforeHeader
+        }
+        advanced {
+            executionMappingIdentifier: 14464349675528213
+        }
+        serverSideCondition {
+            type: itemIsNotNull
+            item: P6_WO_ID
+        }
+    )
+
+    process start-workflow (
+        name: Start workflow
+        type: executeCode
+        source {
+            plsqlCode:
+                ```plsql
+                :P6_WORKFLOW_ID := apex_workflow.start_workflow(
+                                     p_static_id => 'work-order',
+                                     p_detail_pk => :P6_WO_ID);
+                dh_wo_flow.set_workflow(:P6_WO_ID, :P6_WORKFLOW_ID);
+                ```
+        }
+        execution {
+            sequence: 20
+        }
+        successMessage {
+            successMessage: Work order &P6_WO_ID. placed. The first step is waiting in Tasks.
+        }
+        error {
+            errorMessage: The workflow could not be started.
+        }
+        advanced {
+            executionMappingIdentifier: 14464495548528214
+        }
+        serverSideCondition {
+            type: requestIsContainedInValue
+            value: PLACE,START_WF
+        }
+    )
+
+    branch (
+        name: Show the work order
+        execution {
+            sequence: 10
+        }
+        behavior {
+            target: {
+                page: 6
+                items: {
+                    P6_WO_ID: &P6_WO_ID.
+                }
+            }
+        }
+    )
+
+)
+

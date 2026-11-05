@@ -1,0 +1,373 @@
+workflow work-order (
+    name: Work Order
+    title: Work order &WO_ID. for &ASSET_TYPE_NAME. &ASSET_ID.
+
+    version 1.0 (
+        settings {
+            state: active
+        }
+        additionalData {
+            type: tableView
+            tableName: DH_WORK_ORDERS_V
+        }
+        columnMapping {
+            primaryKeyColumn: WO_ID
+        }
+        advanced {
+            debugLevel: info
+        }
+
+        activity approve-work-order (
+            name: Approve work order
+            type: humanTaskCreate
+            settings {
+                initiatorItem: INITIATOR
+            }
+            humanTask {
+                definition: @approve-work-order
+                taskIdItem: TASK_ID
+                detailsPkItem: WO_PK
+            }
+            overrides {
+                subject: Approve work order &WO_ID. for &ASSET_TYPE_NAME. &ASSET_ID.: &TITLE.
+            }
+            result {
+                outcome: TASK_OUTCOME
+                owner: APPROVER
+            }
+            layout {
+                sequence: 20
+            }
+            advanced {
+                diagram: "{\"position\":{\"x\":240,\"y\":850},\"z\":2}"
+            }
+
+            connection (
+                name: New
+                activity {
+                    to: @approved
+                }
+                advanced {
+                    diagram: "{\"source\":{},\"target\":{},\"vertices\":[],\"z\":4,\"label\":{\"distance\":0.5,\"offset\":0}}"
+                }
+            )
+
+        )
+
+        activity approved (
+            name: Approved?
+            type: switch
+            condition {
+                conditionType: expression
+                plsqlExpression: :TASK_OUTCOME = 'APPROVED'
+            }
+            layout {
+                sequence: 30
+            }
+            advanced {
+                diagram: "{\"position\":{\"x\":490,\"y\":850},\"z\":3}"
+            }
+
+            connection (
+                name: True
+                condition {
+                    when: true
+                }
+                activity {
+                    to: @status-planned
+                }
+                advanced {
+                    diagram: "{\"source\":{\"name\":\"top\",\"args\":{\"dx\":0,\"dy\":10}},\"target\":{\"name\":\"topLeft\",\"args\":{\"dx\":\"0%\",\"dy\":\"50%\",\"rotate\":true}},\"vertices\":[],\"z\":18,\"label\":{\"distance\":0.5,\"offset\":0}}"
+                }
+            )
+
+            connection (
+                name: False
+                condition {
+                    when: false
+                }
+                activity {
+                    to: @status-cancelled
+                }
+                advanced {
+                    diagram: "{\"source\":{\"name\":\"bottom\",\"args\":{\"dx\":0,\"dy\":-10}},\"target\":{\"name\":\"topLeft\",\"args\":{\"dx\":\"0%\",\"dy\":\"50%\",\"rotate\":true}},\"vertices\":[],\"z\":22,\"label\":{\"distance\":0.5,\"offset\":0}}"
+                }
+            )
+
+        )
+
+        activity cancelled (
+            name: Cancelled
+            type: workflowEnd
+            layout {
+                sequence: 50
+            }
+            advanced {
+                diagram: "{\"position\":{\"x\":1000,\"y\":940},\"z\":20}"
+            }
+        )
+
+        activity close-and-repair (
+            name: Close and repair
+            type: executeCode
+            source {
+                plsqlCode: dh_wo_flow.close_work_order(:APEX$WORKFLOW_DETAIL_PK);
+            }
+            layout {
+                sequence: 100
+            }
+            advanced {
+                diagram: "{\"position\":{\"x\":1860,\"y\":770},\"z\":13}"
+            }
+
+            connection (
+                name: New
+                activity {
+                    to: @closed
+                }
+                advanced {
+                    diagram: "{\"source\":{\"name\":\"topLeft\",\"args\":{\"dx\":\"100%\",\"dy\":\"50%\",\"rotate\":true}},\"target\":{\"name\":\"topLeft\",\"args\":{\"dx\":\"0%\",\"dy\":\"50%\",\"rotate\":true}},\"vertices\":[],\"z\":17,\"label\":{\"distance\":0.5,\"offset\":0}}"
+                }
+            )
+
+        )
+
+        activity closed (
+            name: Closed
+            type: workflowEnd
+            layout {
+                sequence: 110
+            }
+            advanced {
+                diagram: "{\"position\":{\"x\":2200,\"y\":770}}"
+            }
+        )
+
+        activity confirm-work-done (
+            name: Confirm work done
+            type: humanTaskCreate
+            settings {
+                initiatorItem: INITIATOR
+            }
+            humanTask {
+                definition: @confirm-work-done
+                taskIdItem: TASK_ID
+                detailsPkItem: WO_PK
+            }
+            overrides {
+                subject: Confirm work done for work order &WO_ID. for &ASSET_TYPE_NAME. &ASSET_ID.: &TITLE.
+            }
+            layout {
+                sequence: 90
+            }
+            advanced {
+                diagram: "{\"position\":{\"x\":1560,\"y\":770},\"z\":10}"
+            }
+
+            connection (
+                name: New
+                activity {
+                    to: @close-and-repair
+                }
+                advanced {
+                    diagram: "{\"source\":{},\"target\":{},\"vertices\":[],\"z\":14,\"label\":{\"distance\":0.5,\"offset\":0}}"
+                }
+            )
+
+        )
+
+        activity start-work (
+            name: Start work
+            type: humanTaskCreate
+            settings {
+                initiatorItem: INITIATOR
+            }
+            humanTask {
+                definition: @start-work
+                taskIdItem: TASK_ID
+                detailsPkItem: WO_PK
+            }
+            overrides {
+                subject: Start work on work order &WO_ID. for &ASSET_TYPE_NAME. &ASSET_ID.: &TITLE.
+            }
+            layout {
+                sequence: 70
+            }
+            advanced {
+                diagram: "{\"position\":{\"x\":980,\"y\":770},\"z\":6}"
+            }
+
+            connection (
+                name: New
+                activity {
+                    to: @status-in-progress
+                }
+                advanced {
+                    diagram: "{\"source\":{},\"target\":{},\"vertices\":[],\"z\":9,\"label\":{\"distance\":0.5,\"offset\":0}}"
+                }
+            )
+
+        )
+
+        activity start_1 (
+            name: Start
+            type: workflowStart
+            layout {
+                sequence: 10
+            }
+            advanced {
+                diagram: "{\"position\":{\"x\":70,\"y\":850}}"
+            }
+
+            connection (
+                name: New
+                activity {
+                    to: @approve-work-order
+                }
+                advanced {
+                    diagram: "{\"source\":{\"name\":\"right\",\"args\":{\"dx\":-10,\"dy\":0}},\"target\":{\"name\":\"topLeft\",\"args\":{\"dx\":\"0%\",\"dy\":\"50%\",\"rotate\":true}},\"vertices\":[],\"z\":12,\"label\":{\"distance\":0.5,\"offset\":0}}"
+                }
+            )
+
+        )
+
+        activity status-cancelled (
+            name: Status CANCELLED
+            type: executeCode
+            source {
+                plsqlCode: dh_wo_flow.set_status(:APEX$WORKFLOW_DETAIL_PK, 'CANCELLED');
+            }
+            layout {
+                sequence: 40
+            }
+            advanced {
+                diagram: "{\"position\":{\"x\":700,\"y\":940},\"z\":15}"
+            }
+
+            connection (
+                name: New
+                activity {
+                    to: @cancelled
+                }
+                advanced {
+                    diagram: "{\"source\":{},\"target\":{},\"vertices\":[],\"z\":21,\"label\":{\"distance\":0.5,\"offset\":0}}"
+                }
+            )
+
+        )
+
+        activity status-in-progress (
+            name: Status IN_PROGRESS
+            type: executeCode
+            source {
+                plsqlCode: dh_wo_flow.set_status(:APEX$WORKFLOW_DETAIL_PK, 'IN_PROGRESS');
+            }
+            layout {
+                sequence: 80
+            }
+            advanced {
+                diagram: "{\"position\":{\"x\":1270,\"y\":770},\"z\":8}"
+            }
+
+            connection (
+                name: New
+                activity {
+                    to: @confirm-work-done
+                }
+                advanced {
+                    diagram: "{\"source\":{},\"target\":{},\"vertices\":[],\"z\":11,\"label\":{\"distance\":0.5,\"offset\":0}}"
+                }
+            )
+
+        )
+
+        activity status-planned (
+            name: Status PLANNED
+            type: executeCode
+            source {
+                plsqlCode: dh_wo_flow.set_status(:APEX$WORKFLOW_DETAIL_PK, 'PLANNED');
+            }
+            layout {
+                sequence: 60
+            }
+            advanced {
+                diagram: "{\"position\":{\"x\":700,\"y\":770},\"z\":5}"
+            }
+
+            connection (
+                name: New
+                activity {
+                    to: @start-work
+                }
+                advanced {
+                    diagram: "{\"source\":{},\"target\":{},\"vertices\":[],\"z\":7,\"label\":{\"distance\":0.5,\"offset\":0}}"
+                }
+            )
+
+        )
+
+        variable APPROVER (
+            label {
+                label: Approver
+            }
+        )
+
+        variable INITIATOR (
+            label {
+                label: Initiator
+            }
+            value {
+                type: expression
+                plsqlExpression: :APEX$WORKFLOW_INITIATOR
+            }
+        )
+
+        variable TASK_ID (
+            label {
+                label: Task
+            }
+            parameter {
+                dataType: number
+            }
+        )
+
+        variable TASK_OUTCOME (
+            label {
+                label: TaskOutcome
+            }
+        )
+
+        variable WO_PK (
+            label {
+                label: Work order
+            }
+            parameter {
+                dataType: number
+            }
+            value {
+                type: expression
+                plsqlExpression: :APEX$WORKFLOW_DETAIL_PK
+            }
+        )
+
+        participant (
+            name: Workflow owner
+            value {
+                type: expression
+                plsqlExpression: :APEX$WORKFLOW_INITIATOR
+            }
+        )
+
+        participant (
+            name: Workflow administrator
+            type: admin
+            value {
+                type: expression
+                plsqlExpression: :APEX$WORKFLOW_INITIATOR
+            }
+        )
+
+    )
+
+)
+

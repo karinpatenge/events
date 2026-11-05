@@ -318,6 +318,7 @@ page 3 (
             height2: 500
             sizeMode: compact
             edgeMarker: arrow
+            tooltipMaxLength: 1000
             defaultValuesForModes: enableFitToScreen
             display: [
                 modes
@@ -433,13 +434,9 @@ page 3 (
             templateOptions: #DEFAULT#
             height: 1
         }
-        default {
-            type: functionBody
-            plsqlFunctionBody: "RETURN NVL(JSON_VALUE(agent_find_root_cause(), '$.incidents[0].root_cause_asset'), 'PS-04');"
-        }
     )
 
-    pageItem P3_WO (
+    pageItem P3_BYPASS (
         type: hidden
         layout {
             sequence: 20
@@ -448,9 +445,18 @@ page 3 (
         }
     )
 
-    button close-byp (
-        buttonName: CLOSE_BYP1
-        label: Close BYP-1
+    pageItem P3_OPEN_WO (
+        type: hidden
+        layout {
+            sequence: 30
+            region: @incident
+            slot: regionBody
+        }
+    )
+
+    button close-bypass (
+        buttonName: CLOSE_BYPASS
+        label: Close bypass &P3_BYPASS.
         layout {
             sequence: 40
             region: @incident
@@ -469,13 +475,13 @@ page 3 (
         }
         serverSideCondition {
             type: rowsReturned
-            sqlQuery: SELECT 1 FROM dh_pipes WHERE pipe_id = 'BYP-1' AND valve_state = 'OPEN'
+            sqlQuery: SELECT 1 FROM dh_pipes WHERE pipe_id = :P3_BYPASS AND valve_state = 'OPEN'
         }
     )
 
     button create-wo (
         buttonName: CREATE_WO
-        label: Create work order
+        label: Create work order for &P3_ASSET_ID.
         layout {
             sequence: 50
             region: @incident
@@ -490,13 +496,25 @@ page 3 (
             icon: fa-wrench
         }
         behavior {
+            action: redirectThisApp
+            target: {
+                page: 6
+                items: {
+                    P6_ASSET_ID: &P3_ASSET_ID.
+                }
+                clearCache: 6
+            }
             warnOnUnsavedChanges: doNotCheck
+        }
+        serverSideCondition {
+            type: rowsReturned
+            sqlQuery: SELECT 1 FROM dh_assets WHERE asset_id = :P3_ASSET_ID AND health_status IN ('ALARM', 'WARNING') AND :P3_OPEN_WO IS NULL
         }
     )
 
-    button open-byp (
-        buttonName: OPEN_BYP1
-        label: Open BYP-1
+    button open-bypass (
+        buttonName: OPEN_BYPASS
+        label: Open bypass &P3_BYPASS.
         layout {
             sequence: 30
             region: @incident
@@ -516,93 +534,125 @@ page 3 (
         }
         serverSideCondition {
             type: rowsReturned
-            sqlQuery: SELECT 1 FROM dh_pipes WHERE pipe_id = 'BYP-1' AND valve_state = 'CLOSED'
+            sqlQuery: SELECT 1 FROM dh_pipes WHERE pipe_id = :P3_BYPASS AND valve_state = 'CLOSED'
         }
     )
 
-    process close-byp (
-        name: Close BYP-1
+    button open-wo (
+        buttonName: OPEN_WO
+        label: Open work order &P3_OPEN_WO.
+        layout {
+            sequence: 60
+            region: @incident
+            slot: next
+        }
+        appearance {
+            buttonTemplate: @/text-with-icon
+            templateOptions: [
+                #DEFAULT#
+                t-Button--iconLeft
+            ]
+            icon: fa-wrench
+        }
+        behavior {
+            action: redirectThisApp
+            target: {
+                page: 6
+                items: {
+                    P6_WO_ID: &P3_OPEN_WO.
+                }
+                clearCache: 6
+            }
+            warnOnUnsavedChanges: doNotCheck
+        }
+        serverSideCondition {
+            type: itemIsNotNull
+            item: P3_OPEN_WO
+        }
+    )
+
+    computation p3-asset-id (
+        itemName: P3_ASSET_ID
+        execution {
+            sequence: 10
+            point: beforeHeader
+        }
+        computation {
+            type: functionBody
+            plsqlFunctionBody: "RETURN NVL(JSON_VALUE(agent_find_root_cause(), '$.incidents[0].root_cause_asset'), 'PS-04');"
+        }
+        serverSideCondition {
+            type: itemIsNull
+            item: P3_ASSET_ID
+        }
+    )
+
+    computation p3-bypass (
+        itemName: P3_BYPASS
+        execution {
+            sequence: 20
+            point: beforeHeader
+        }
+        computation {
+            type: functionBody
+            plsqlFunctionBody: RETURN dh_bypass_for_asset(:P3_ASSET_ID);
+        }
+    )
+
+    computation p3-open-wo (
+        itemName: P3_OPEN_WO
+        execution {
+            sequence: 30
+            point: beforeHeader
+        }
+        computation {
+            sqlQuery: SELECT MAX(wo_id) FROM dh_work_orders WHERE asset_id = :P3_ASSET_ID AND status IN ('NEW', 'PLANNED', 'IN_PROGRESS')
+        }
+    )
+
+    process close-bypass (
+        name: Close bypass
         type: executeCode
         source {
-            plsqlCode: dh_set_valve('BYP-1', 'CLOSED');
+            plsqlCode: dh_set_valve(:P3_BYPASS, 'CLOSED');
         }
         execution {
             sequence: 20
         }
         successMessage {
-            successMessage: BYP-1 is closed.
+            successMessage: &P3_BYPASS. is closed.
         }
         error {
-            errorMessage: Closing BYP-1 failed.
+            errorMessage: Closing &P3_BYPASS. failed.
         }
         advanced {
-            executionMappingIdentifier: 15971174451061714
+            executionMappingIdentifier: 14461061104528175
         }
         serverSideCondition {
-            whenButtonPressed: @close-byp
+            whenButtonPressed: @close-bypass
         }
     )
 
-    process create-work-order (
-        name: Create work order
+    process open-bypass (
+        name: Open bypass
         type: executeCode
         source {
-            plsqlCode:
-                ```plsql
-                DECLARE
-                  l_json CLOB;
-                BEGIN
-                  l_json := dh_graph_api.create_work_order(
-                              p_asset_id   => :P3_ASSET_ID,
-                              p_priority   => 'P1',
-                              p_title      => 'Repair ' || :P3_ASSET_ID,
-                              p_details    => 'Created from APEX page 3',
-                              p_created_by => 'APEX');
-                  :P3_WO := JSON_VALUE(l_json, '$.wo_id');
-                  IF :P3_WO IS NULL THEN
-                    RAISE_APPLICATION_ERROR(-20001, JSON_VALUE(l_json, '$.error'));
-                  END IF;
-                END;
-                
-                ```
-        }
-        execution {
-            sequence: 30
-        }
-        successMessage {
-            successMessage: Work order &P3_WO. created for &P3_ASSET_ID..
-        }
-        error {
-            errorMessage: The work order could not be created.
-        }
-        advanced {
-            executionMappingIdentifier: 15971258405061715
-        }
-        serverSideCondition {
-            whenButtonPressed: @create-wo
-        }
-    )
-
-    process open-byp (
-        name: Open BYP-1
-        type: executeCode
-        source {
-            plsqlCode: dh_set_valve('BYP-1', 'OPEN');
+            plsqlCode: dh_set_valve(:P3_BYPASS, 'OPEN');
         }
         execution {
             sequence: 10
         }
         successMessage {
-            successMessage: BYP-1 is open. The supply returns within about 1.5 minutes.
+            successMessage: &P3_BYPASS. is open. The supply returns within about 1.5 minutes.
         }
         error {
-            errorMessage: Opening BYP-1 failed.
+            errorMessage: Opening &P3_BYPASS. failed.
         }
         advanced {
-            executionMappingIdentifier: 15970995456061712
+            executionMappingIdentifier: 14461177840528175
         }
         serverSideCondition {
-            whenButtonPressed: @open-byp
+            whenButtonPressed: @open-bypass
         }
     )
 

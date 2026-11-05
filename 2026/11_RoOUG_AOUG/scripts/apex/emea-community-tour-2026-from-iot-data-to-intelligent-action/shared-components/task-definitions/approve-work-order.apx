@@ -1,0 +1,40 @@
+taskDefinition approve-work-order (
+    name: Approve work order
+    type: approval
+    task {
+        subject: Approve work order
+        priority: 2
+        initiatorCanComplete: true
+    }
+    source {
+        type: sqlQuery
+        sqlQuery: SELECT * FROM dh_work_orders_v WHERE wo_id = :APEX$TASK_PK
+    }
+    advanced {
+        detailsPage: {
+            page: 8
+            items: {
+                P8_TASK_ID: &TASK_ID.
+            }
+            clearCache: 8
+            action: resetPagination
+        }
+    }
+
+    participant (
+        value {
+            type: expression
+            plsqlExpression: :APEX$TASK_INITIATOR
+        }
+    )
+
+    participant (
+        type: businessAdministrator
+        value {
+            type: expression
+            plsqlExpression: :APEX$TASK_INITIATOR
+        }
+    )
+
+)
+

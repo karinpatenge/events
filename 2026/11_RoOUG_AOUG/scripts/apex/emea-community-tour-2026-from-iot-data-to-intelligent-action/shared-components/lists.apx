@@ -137,6 +137,26 @@ list navigation-menu (
         }
     )
 
+    entry my-tasks (
+        label: Tasks
+        icon {
+            imageIconCssClasses: fa-tasks
+        }
+        layout {
+            sequence: 70
+            parentEntry: @home
+        }
+        isCurrent {
+            type: pages
+            pages: 7
+        }
+        link {
+            target: {
+                page: 7
+            }
+        }
+    )
+
     entry network (
         label: Network
         icon {
@@ -153,6 +173,26 @@ list navigation-menu (
         link {
             target: {
                 page: 2
+            }
+        }
+    )
+
+    entry work-orders (
+        label: Work orders
+        icon {
+            imageIconCssClasses: fa-wrench
+        }
+        layout {
+            sequence: 60
+            parentEntry: @home
+        }
+        isCurrent {
+            type: pages
+            pages: 9
+        }
+        link {
+            target: {
+                page: 9
             }
         }
     )

@@ -126,6 +126,21 @@ page 2 (
                 distanceTool
             ]
         }
+        initialPositionAndZoom {
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT (MIN(longitude) + MAX(longitude)) / 2 AS lon,
+                       (MIN(latitude)  + MAX(latitude))  / 2 AS lat,
+                       FLOOR(LOG(2, 700 / GREATEST(MAX(longitude) - MIN(longitude),
+                                                   (MAX(latitude) - MIN(latitude)) * 1.5))) AS zoom
+                FROM   dh_assets
+                ```
+            geometryColumnDataType: longitudeLatitude
+            initialLongitudeColumn: LON
+            initialLatitudeColumn: LAT
+            initialZoomlevelColumn: ZOOM
+        }
         attributes {
             messagesPosition: below
         }
@@ -592,15 +607,6 @@ page 2 (
 
     )
 
-    pageItem P2_BBOX (
-        type: hidden
-        layout {
-            sequence: 10
-            region: @map
-            slot: regionBody
-        }
-    )
-
     pageItem P2_SHOW_BUILDINGS (
         type: switch
         label {
@@ -651,55 +657,6 @@ page 2 (
             }
         )
 
-    )
-
-    dynamicAction zoom-to-network (
-        name: Zoom to network
-        execution {
-            sequence: 20
-        }
-        when {
-            event: region/map/spatialmapinitialized
-            selectionType: region
-            region: @map
-        }
-
-        action native-javascript-code (
-            action: executeJsCode
-            settings {
-                jsCode:
-                    ```javascript-browser
-                      var map = apex.region("map").getMapObject();     // map object, ready after "Map Initialized"
-                      var b   = $v("P2_BBOX").split(",").map(Number);  // minLon, minLat, maxLon, maxLat
-                      if (map && b.length === 4) {
-                        map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: 40, animate: false });
-                      }
-                    ```
-            }
-            execution {
-                sequence: 10
-                fireOnInit: false
-            }
-        )
-
-    )
-
-    computation p2-bbox (
-        itemName: P2_BBOX
-        execution {
-            sequence: 10
-            point: beforeHeader
-        }
-        computation {
-            sqlQuery:
-                ```sql
-                SELECT TO_CHAR(MIN(longitude), 'TM9', 'NLS_NUMERIC_CHARACTERS=''.,''') || ',' ||
-                       TO_CHAR(MIN(latitude),  'TM9', 'NLS_NUMERIC_CHARACTERS=''.,''') || ',' ||
-                       TO_CHAR(MAX(longitude), 'TM9', 'NLS_NUMERIC_CHARACTERS=''.,''') || ',' ||
-                       TO_CHAR(MAX(latitude),  'TM9', 'NLS_NUMERIC_CHARACTERS=''.,''') AS bbox
-                FROM   dh_assets
-                ```
-        }
     )
 
     branch (

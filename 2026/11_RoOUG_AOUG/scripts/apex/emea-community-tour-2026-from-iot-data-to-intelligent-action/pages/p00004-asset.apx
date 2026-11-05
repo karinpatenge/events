@@ -34,7 +34,7 @@ page 4 (
         layout {
             sequence: 10
             slot: body
-            columnSpan: 2
+            columnSpan: 4
         }
         appearance {
             template: @/standard
@@ -96,7 +96,7 @@ page 4 (
             sequence: 20
             slot: body
             startNewRow: false
-            columnSpan: 10
+            columnSpan: 8
         }
         appearance {
             template: @/standard
@@ -792,7 +792,8 @@ page 4 (
                        priority   AS "Priority",
                        title      AS "Title",
                        status     AS "Status",
-                       created_by AS "Created by"
+                       created_by AS "Created by",
+                       wo_id      AS wo_id
                 FROM   dh_work_orders
                 WHERE  asset_id = :P4_ASSET_ID
                 ORDER  BY wo_id DESC
@@ -860,6 +861,7 @@ page 4 (
         column No. (
             reportColumnQueryId: 1
             derivedColumn: N
+            type: link
             heading {
                 heading: No.
                 alignment: end
@@ -867,6 +869,16 @@ page 4 (
             layout {
                 sequence: 10
                 columnAlignment: end
+            }
+            link {
+                target: {
+                    page: 6
+                    items: {
+                        P6_WO_ID: #WO_ID#
+                    }
+                    clearCache: 6
+                }
+                linkText: #WO_ID#
             }
             sorting {
                 sortable: false
@@ -912,6 +924,15 @@ page 4 (
             }
             sorting {
                 sortable: false
+            }
+        )
+
+        column WO_ID (
+            reportColumnQueryId: 7
+            derivedColumn: N
+            type: hidden
+            layout {
+                sequence: 70
             }
         )
 
