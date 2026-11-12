@@ -10,12 +10,7 @@
 *_kp.sql
 *Unfallorte*
 
-# 2026/10_HrOUG (HrOUG 2026, Spatial Meets AI): publish only what attendees need to run the demos.
-# Everything else in the folder stays local (planning docs, slide graphics, generated data, internal scripts).
-# Tram 6 (stops A-D, track)
-# Demo 1: streaming and vector tiles, map, July positions
-# Demo 2: surface temperature raster, H3 cells, Spatial AI notebooks
-# Demo 3: AI for Spatial
-# Planning docs, stories, slide graphics and icons: never publish
-# (last rules, so no allow-list entry can re-include them)
-
+# 10_HrOUG
+/2026/10_HrOUG/documents/*
+/2026/10_HrOUG/images/*
+/2026/10_HrOUG/scripts/*.py
