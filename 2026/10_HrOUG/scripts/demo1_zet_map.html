@@ -1,0 +1,446 @@
+<!doctype html>
+<!--
+  ZET live map: the three vector tile sources of demo1_streaming_vector_tiles.sqlnb (section 11)
+  on a dark OpenStreetMap basemap (OpenFreeMap), styled like the hook slides (Redwood dark).
+
+  Run (from the 10_HrOUG folder):
+    python -m http.server 8000 --bind 127.0.0.1
+  Open:
+    http://localhost:8000/scripts/demo1_zet_map.html?ords=https://<adb-host>/ords/<schema>
+  Optional: &refresh=<seconds> (vehicle layer reload interval, default 10)
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZET Live Map</title>
+<link rel="icon" type="image/png" href="../media/small/tram-station.png">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  :root {
+    /* Redwood FY26 dark, as in the slides and hook frames */
+    --bg: #2A2F2F;
+    --card: #343A3A;
+    --rule: #4A5252;
+    --text: #FFFFFF;
+    --text-2: #AEA8A2;
+    --text-3: #8B8580;
+    --yellow: #F0CC71;
+    --red-light: #E8A097;
+    --tram-line: #80B3C5;
+    --tram: #00688C;
+  }
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Oracle Sans Tab", "Oracle Sans", "Segoe UI", system-ui, sans-serif;
+  }
+  #map { position: absolute; inset: 0; }
+
+  .panel {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    width: 310px;
+    max-width: calc(100% - 32px);
+    box-sizing: border-box;
+    padding: 16px 18px;
+    background: rgba(52, 58, 58, 0.94);
+    border-radius: 10px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  .panel h1 { margin: 0 0 2px; font-size: 18px; font-weight: 600; }
+  .panel .sub { margin: 0 0 12px; color: var(--text-2); font-size: 12px; }
+  .legend { margin: 0 0 12px; padding: 0; list-style: none; }
+  .legend li { display: flex; align-items: center; gap: 10px; margin: 7px 0; }
+  .legend svg { flex: none; }
+  .legend small { color: var(--text-2); }
+  .status {
+    padding-top: 10px;
+    border-top: 1px solid var(--rule);
+    color: var(--text-2);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+  .status.warn { color: var(--yellow); }
+  .status.error { color: var(--red-light); }
+  .status code { color: var(--text); }
+
+  /* MapLibre controls and popups in the dark palette */
+  .maplibregl-ctrl-group { background: var(--card); }
+  .maplibregl-ctrl-group button + button { border-top-color: var(--rule); }
+  .maplibregl-ctrl-group .maplibregl-ctrl-icon { filter: invert(1); }
+  .maplibregl-ctrl.maplibregl-ctrl-attrib { background: rgba(42, 47, 47, 0.85); color: var(--text-3); }
+  .maplibregl-ctrl-attrib a { color: var(--text-2); }
+  .maplibregl-ctrl-attrib-button { filter: invert(1); background-color: transparent; }
+  .maplibregl-popup-content {
+    background: var(--card);
+    color: var(--text);
+    font: 13px/1.4 "Oracle Sans Tab", "Oracle Sans", "Segoe UI", system-ui, sans-serif;
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .maplibregl-popup-content strong { display: block; font-size: 14px; }
+  .maplibregl-popup-content span { color: var(--text-2); }
+  .maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: var(--card); }
+  .maplibregl-popup-anchor-top .maplibregl-popup-tip { border-bottom-color: var(--card); }
+  .maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: var(--card); }
+  .maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: var(--card); }
+
+  @media (max-width: 600px) {
+    .panel { top: auto; right: 16px; bottom: 36px; width: auto; }
+    .panel .legend { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="panel">
+  <h1>ZET trams in Zagreb, live</h1>
+  <p class="sub">Vector tiles from Oracle AI Database (<code>SDO_UTIL.GET_VECTORTILE</code>) through ORDS</p>
+  <ul class="legend">
+    <li>
+      <svg width="28" height="14" aria-hidden="true"><line x1="2" y1="7" x2="26" y2="7" stroke="#80B3C5" stroke-width="5" stroke-linecap="round"/></svg>
+      Tram 6 track
+    </li>
+    <li>
+      <svg width="28" height="28" aria-hidden="true">
+        <circle cx="14" cy="14" r="12" fill="#FFFFFF" stroke="#2A2F2F" stroke-width="2"/>
+        <image href="../media/large/tram-station.png" x="4" y="4" width="20" height="20"/>
+      </svg>
+      Stops A–D
+    </li>
+    <li>
+      <svg width="28" height="14" aria-hidden="true">
+        <circle cx="6" cy="7" r="4" fill="#00688C" stroke="#FFFFFF" stroke-width="1" opacity="0.3"/>
+        <circle cx="14" cy="7" r="4.5" fill="#00688C" stroke="#FFFFFF" stroke-width="1.2" opacity="0.6"/>
+        <circle cx="22" cy="7" r="5" fill="#00688C" stroke="#FFFFFF" stroke-width="1.5"/>
+      </svg>
+      <span>Trams <small>(last 2 minutes, older positions fade)</small></span>
+    </li>
+  </ul>
+  <div id="status" class="status">Loading the map …</div>
+</div>
+
+<script type="module">
+// --- Configuration -------------------------------------------------------------------------------
+// ORDS base URL of the schema that owns the module zet.tiles (notebook section 11).
+// Set it here, or pass it in the page URL: demo1_zet_map.html?ords=https://<adb-host>/ords/<schema>
+const DEFAULT_ORDS_BASE = 'https://<adb-host>/ords/<schema>';
+
+const params     = new URLSearchParams(window.location.search);
+const ORDS_BASE  = (params.get('ords') || DEFAULT_ORDS_BASE).trim().replace(/\/+$/, '');
+const CONFIGURED = /^https?:\/\/[^<>\s]+$/i.test(ORDS_BASE);
+const REFRESH_S  = Math.max(2, Number(params.get('refresh')) || 10);   // reload interval of the vehicle layer
+const WINDOW_S   = 120;                                                 // default p_window_s of ZET_TILES.VEHICLES
+
+// Basemap: OpenFreeMap "dark" (Dark Matter layout, OpenStreetMap data, no API key), its glyphs for
+// labels, and the stop icon from the media folder. Oracle's own osm-dark-matter style uses the same
+// layout, but its vector tiles need an Oracle Maps token (HTTP 401 from other sites).
+const BASEMAP_STYLE = 'https://tiles.openfreemap.org/styles/dark';
+const GLYPHS        = 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf';
+const FONT          = ['Noto Sans Regular'];
+const STATION_ICON  = '../media/large/tram-station.png';
+
+// Colours of the hook frames (Redwood dark)
+const C = {
+  bg: '#2A2F2F', card: '#343A3A', text: '#FFFFFF', text2: '#AEA8A2', text3: '#8B8580',
+  tramLine: '#80B3C5', tram: '#00688C',
+  water: '#0E5A72', green: '#323A38', building: '#343A3A', road: '#3C4343', roadMajor: '#4A5252'
+};
+
+// --- Helpers -------------------------------------------------------------------------------------
+const statusEl = document.getElementById('status');
+function setStatus(text, level = '') {
+  statusEl.className = 'status' + (level ? ' ' + level : '');
+  statusEl.textContent = text;
+}
+
+// Tile URL of one ORDS template; "bust" makes every vehicle reload a new URL (no browser cache)
+function tileUrl(layer, bust) {
+  return `${ORDS_BASE}/zet/vt/${layer}/{z}/{x}/{y}` + (bust ? `?t=${bust}` : '');
+}
+
+// GET_VECTORTILE writes attribute names as the column names, usually upper case: accept both
+const prop = (name) => ['coalesce', ['get', name.toUpperCase()], ['get', name.toLowerCase()]];
+const props = (f, name) => f.properties[name.toUpperCase()] ?? f.properties[name.toLowerCase()];
+const age = ['to-number', prop('age_s'), 0];
+
+const zagrebTime = (d = new Date()) => d.toLocaleTimeString('en-GB', { timeZone: 'Europe/Zagreb' });
+
+// --- Basemap: Dark Matter layout, recoloured to the Redwood dark palette -------------------------
+const TINT = {
+  'background':              { 'background-color': C.bg },
+  'landuse_residential':     { 'fill-color': C.bg },
+  'landcover_ice_shelf':     { 'fill-color': C.bg },
+  'landcover_glacier':       { 'fill-color': C.bg },
+  'road_area_pier':          { 'fill-color': C.bg },
+  'road_pier':               { 'line-color': C.bg },
+  'landcover_wood':          { 'fill-color': C.green },
+  'landuse_park':            { 'fill-color': C.green },
+  'water':                   { 'fill-color': C.water },
+  'waterway':                { 'line-color': C.water },
+  'building':                { 'fill-color': C.building, 'fill-outline-color': '#3E4545' },
+  'highway_path':            { 'line-color': '#363C3C' },
+  'highway_minor':           { 'line-color': C.road },
+  'highway_major_casing':    { 'line-color': C.bg },
+  'highway_major_inner':     { 'line-color': C.roadMajor },
+  'highway_major_subtle':    { 'line-color': C.road },
+  'highway_motorway_casing': { 'line-color': C.bg },
+  'highway_motorway_inner':  { 'line-color': '#525B5B' },
+  'highway_motorway_subtle': { 'line-color': C.road },
+  'railway':                 { 'line-color': C.road },
+  'railway_minor':           { 'line-color': C.road },
+  'railway_transit':         { 'line-color': C.road },
+  'railway_dashline':        { 'line-color': C.bg },
+  'railway_minor_dashline':  { 'line-color': C.bg },
+  'railway_transit_dashline':{ 'line-color': C.bg },
+  'water_name':              { 'text-color': C.tramLine, 'text-halo-color': C.bg },
+  'highway_name_other':      { 'text-color': C.text3, 'text-halo-color': C.bg },
+  'highway_name_motorway':   { 'text-color': C.text3 }
+};
+
+function tintBasemap(style) {
+  for (const layer of style.layers) {
+    let paint = TINT[layer.id];
+    if (!paint && layer.id.startsWith('place_'))    paint = { 'text-color': C.text2, 'text-halo-color': C.bg };
+    if (!paint && layer.id.startsWith('boundary_')) paint = { 'line-color': C.roadMajor };
+    if (paint) layer.paint = { ...(layer.paint || {}), ...paint };
+  }
+}
+
+async function loadBasemap() {
+  try {
+    const res = await fetch(BASEMAP_STYLE);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const style = await res.json();
+    tintBasemap(style);
+    return style;
+  } catch (err) {
+    console.warn('Basemap not available, using a plain background:', err);
+    return {
+      version: 8,
+      glyphs: GLYPHS,
+      sources: {},
+      layers: [{ id: 'background', type: 'background', paint: { 'background-color': C.bg } }]
+    };
+  }
+}
+
+// --- ZET layers: the three ORDS vector tile sources ---------------------------------------------
+function addZetLayers(style) {
+  style.glyphs = style.glyphs || GLYPHS;
+  if (!CONFIGURED) return;
+
+  style.sources['zet-tram-lines'] = {
+    type: 'vector', tiles: [tileUrl('tram-lines')], minzoom: 10, maxzoom: 16,
+    attribution: 'Tram track and stops: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  };
+  style.sources['zet-tram-stations'] = {
+    type: 'vector', tiles: [tileUrl('tram-stations')], minzoom: 10, maxzoom: 16
+  };
+  style.sources['zet-vehicles'] = {
+    type: 'vector', tiles: [tileUrl('vehicles', Date.now())], minzoom: 11, maxzoom: 16,
+    attribution: 'Vehicle positions: <a href="https://www.zet.hr/">ZET</a> GTFS-Realtime'
+  };
+
+  style.layers.push(
+    // Tram 6 track: light blue line with a dark casing, as in the hook frames
+    {
+      id: 'zet-tram-lines-casing', type: 'line', source: 'zet-tram-lines', 'source-layer': 'tram_lines',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': C.bg, 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 4, 14, 9, 17, 16] }
+    },
+    {
+      id: 'zet-tram-lines', type: 'line', source: 'zet-tram-lines', 'source-layer': 'tram_lines',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': C.tramLine, 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 2, 14, 5, 17, 10] }
+    },
+    // Stops A-D: white circle; the tram-station icon is added on top once the image is loaded
+    {
+      id: 'zet-station-circles', type: 'circle', source: 'zet-tram-stations', 'source-layer': 'tram_stations',
+      paint: {
+        'circle-color': C.text,
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 6, 14, 12, 17, 16],
+        'circle-stroke-color': C.bg,
+        'circle-stroke-width': 2
+      }
+    },
+    // Trams: newest position on top, older positions fade out over the time window
+    {
+      id: 'zet-vehicles', type: 'circle', source: 'zet-vehicles', 'source-layer': 'vehicles',
+      layout: { 'circle-sort-key': ['-', 0, age] },
+      paint: {
+        'circle-color': C.tram,
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 3, 14, 6, 17, 10],
+        'circle-stroke-color': C.text,
+        'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 11, 1, 14, 1.5, 17, 2],
+        'circle-opacity': ['interpolate', ['linear'], age, 0, 1, WINDOW_S, 0.15],
+        'circle-stroke-opacity': ['interpolate', ['linear'], age, 0, 1, WINDOW_S, 0.15]
+      }
+    },
+    // Line number next to the newest positions, from zoom 15
+    {
+      id: 'zet-vehicle-labels', type: 'symbol', source: 'zet-vehicles', 'source-layer': 'vehicles', minzoom: 15,
+      filter: ['<', age, 60],
+      layout: {
+        'text-field': ['to-string', prop('route_id')],
+        'text-font': FONT,
+        'text-size': 12,
+        'text-anchor': 'bottom',
+        'text-offset': [0, -0.9],
+        'symbol-sort-key': age
+      },
+      paint: { 'text-color': C.text, 'text-halo-color': C.bg, 'text-halo-width': 1.5 }
+    },
+    // Stop code (A-D), plus the stop name from zoom 15
+    {
+      id: 'zet-station-labels', type: 'symbol', source: 'zet-tram-stations', 'source-layer': 'tram_stations',
+      layout: {
+        'text-field': ['step', ['zoom'],
+          ['to-string', prop('station_code')],
+          15, ['format',
+                ['to-string', prop('station_code')], {},
+                '  ', {},
+                ['to-string', prop('station_name')], { 'font-scale': 0.75, 'text-color': C.text2 }]],
+        'text-font': FONT,
+        'text-size': 18,
+        'text-anchor': 'left',
+        'text-offset': ['interpolate', ['linear'], ['zoom'], 11, ['literal', [0.6, 0]], 14, ['literal', [1.0, 0]], 17, ['literal', [1.3, 0]]],
+        'text-allow-overlap': true
+      },
+      paint: { 'text-color': C.text, 'text-halo-color': C.bg, 'text-halo-width': 2 }
+    }
+  );
+}
+
+// --- Map -----------------------------------------------------------------------------------------
+const style = await loadBasemap();
+addZetLayers(style);
+
+// Start view: stops A (Trg bana Josipa Jelačića) to D (Autobusni kolodvor), clear of the panel.
+// A view in the URL hash (#zoom/lat/lon) takes precedence.
+const STOPS_BOUNDS = [[15.97694, 45.80400], [15.99378, 45.81294]];
+const WIDE = window.innerWidth > 600;
+
+const map = new maplibregl.Map({
+  container: 'map',
+  style,
+  bounds: STOPS_BOUNDS,
+  fitBoundsOptions: {
+    padding: WIDE ? { top: 80, bottom: 80, left: 370, right: 80 } : { top: 40, bottom: 200, left: 30, right: 30 },
+    maxZoom: 16
+  },
+  minZoom: 10,
+  maxZoom: 18,
+  hash: true,
+  attributionControl: { compact: true }
+});
+window.zetMap = map;                 // for inspection in the browser console
+map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
+
+if (!CONFIGURED) {
+  setStatus('Set the ORDS base URL: add ?ords=https://<adb-host>/ords/<schema> to the page URL, '
+          + 'or set DEFAULT_ORDS_BASE in the file.', 'warn');
+}
+
+let tileError = null;
+let refreshedAt = new Date();
+
+map.on('load', async () => {
+  if (!CONFIGURED) return;
+  try {
+    const { data } = await map.loadImage(STATION_ICON);
+    map.addImage('tram-station', data);
+    map.addLayer({
+      id: 'zet-station-icons', type: 'symbol', source: 'zet-tram-stations', 'source-layer': 'tram_stations',
+      layout: {
+        'icon-image': 'tram-station',
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 11, 0.35, 14, 0.62, 17, 0.85],
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true
+      }
+    }, 'zet-vehicles');
+  } catch (err) {
+    console.warn(`Stop icon ${STATION_ICON} not loaded (open the page through a web server):`, err);
+  }
+
+  // Reload the vehicle tiles every REFRESH_S seconds; tiles stay visible until the new ones arrive
+  setInterval(() => {
+    if (document.hidden) return;
+    tileError = null;
+    refreshedAt = new Date();
+    map.getSource('zet-vehicles').setTiles([tileUrl('vehicles', refreshedAt.getTime())]);
+  }, REFRESH_S * 1000);
+});
+
+map.on('error', (e) => {
+  const id = e.sourceId || (e.source && e.source.id) || '';
+  if (!id.startsWith('zet-')) { console.warn(e.error); return; }
+  const status = e.error && e.error.status;
+  tileError = `Tile request to ORDS failed (${status ? 'HTTP ' + status : 'network or CORS'}). `
+            + 'Check the ORDS URL, that the module zet.tiles exists, and the browser console.';
+  setStatus(tileError, 'error');
+});
+
+map.on('idle', () => {
+  if (!CONFIGURED || tileError) return;
+  const trams = new Set(
+    map.querySourceFeatures('zet-vehicles', { sourceLayer: 'vehicles' }).map((f) => props(f, 'vehicle_id'))
+  );
+  if (trams.size === 0) {
+    setStatus(`No tram positions in the last ${WINDOW_S / 60} minutes in this view (${zagrebTime(refreshedAt)} Zagreb time). `
+            + 'Is the loader streaming into ZET_VEHICLE_POSITIONS?', 'warn');
+  } else {
+    setStatus(`${trams.size} trams with positions in the last ${WINDOW_S / 60} minutes · `
+            + `updated ${zagrebTime(refreshedAt)} Zagreb time, every ${REFRESH_S} s`);
+  }
+});
+
+// --- Popups --------------------------------------------------------------------------------------
+const popup = new maplibregl.Popup({ closeButton: false, offset: 14 });
+
+function popupContent(title, lines) {
+  const div = document.createElement('div');
+  const strong = document.createElement('strong');
+  strong.textContent = title;
+  div.append(strong);
+  for (const line of lines) {
+    const span = document.createElement('span');
+    span.textContent = line;
+    div.append(span, document.createElement('br'));
+  }
+  return div;
+}
+
+map.on('click', 'zet-vehicles', (e) => {
+  const f = e.features[0];
+  popup.setLngLat(f.geometry.coordinates)
+       .setDOMContent(popupContent(`Tram line ${props(f, 'route_id') ?? '?'}`, [
+         `Vehicle ${props(f, 'vehicle_id')}`,
+         `Position ${props(f, 'age_s')} s old`
+       ]))
+       .addTo(map);
+});
+
+map.on('click', 'zet-station-circles', (e) => {
+  const f = e.features[0];
+  popup.setLngLat(f.geometry.coordinates)
+       .setDOMContent(popupContent(`Stop ${props(f, 'station_code')}`, [props(f, 'station_name') ?? '']))
+       .addTo(map);
+});
+
+for (const layer of ['zet-vehicles', 'zet-station-circles']) {
+  map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
+}
+</script>
+</body>
+</html>
