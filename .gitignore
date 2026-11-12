@@ -14,3 +14,6 @@
 /2026/10_HrOUG/documents/*
 /2026/10_HrOUG/images/*
 /2026/10_HrOUG/scripts/*.py
+
+# 11_RoOUG_AOUG
+/2026/11_RoOUG_AOUG/scripts/sql/demo_prep.sqlnb
