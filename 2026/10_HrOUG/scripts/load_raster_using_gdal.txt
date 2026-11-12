@@ -1,0 +1,5 @@
+time gdal_translate -of georaster zg_lst_20260802.tif georaster:$DBUSER/$DBPWD@$DBSERVICE,zg_heat_rasters,georaster \
+  -co insert="(GEORID, SOURCE_FILE, GEORASTER, CAPTURE_DATE) values (1, 'zg_lst_20260802.tif', sdo_geor.init('zg_heat_rasters_rdt', 1), '20260802')" \
+  -co blockxsize=256 -co blockysize=256 -co blockbsize=1 \
+  -co blocking=optimalpadding -co interleave=BIP \
+  -co spatialextent=true -co srid=4326 -co extentsrid=4326

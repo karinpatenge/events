@@ -1,0 +1,29 @@
+PUT /mydb/myschema/documentation HTTP/1.1
+Content-Type: application/vnd.api+json
+Body:
+{
+  "data": [{
+    "type": "documentation",
+    "id": "1",
+    "attributes": {
+      "title": "A Spatial Studio OpenAPI Specification for the REST API Endpoints",
+      "url": "https://docs.oracle.com/en/database/oracle/spatial-studio/25.1/spstu/spatial-studio-openapi-specification-rest-api-endpoints.html",
+      "provider": "Oracle"
+    },
+    "relationships": {
+      "database": {
+        "data": {"id": "1", "type": "product"}
+      }
+    }
+  }],
+  "included": [
+    {
+      "type": "product",
+      "id": "1",
+      "attributes": {
+        "name": "Oracle Database",
+        "release": "25.1"
+      }
+    }
+  ]
+}

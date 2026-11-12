@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Vector Tiles 23ai Demo</title>
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <script src="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@2.4.0/dist/maplibre-gl.css" rel="stylesheet" />
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+    </style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+  const map = new maplibregl.Map({
+    container: 'map',
+    style: 'https://maps.oracle.com/mapviewer/pvt/res/style/osm-positron/style.json',
+    center: [10.0, 50.0],
+    zoom: 4,
+    transformRequest: (url, resourceType) => {
+      if (resourceType === 'Tile' && (
+        url.startsWith('https://maps.oracle.com/mapviewer/pvt') ||
+        url.startsWith('https://elocation.oracle.com/mapviewer/pvt'))
+      ){
+        return {
+          url: url,
+          headers: {'x-oracle-pvtile': 'OracleSpatial'},
+          credentials: 'include'
+        };
+      }
+    }
+  });
+
+  map.on('load', function () {
+    map.addSource('accidents', {
+      type: 'vector',
+      tiles: [
+        "https://wguwywegel1ojah-kpadw.adb.eu-frankfurt-1.oraclecloudapps.com/ords/spatialuser/ac2025/vt/{z}/{x}/{y}.pbf"
+      ]
+  });
+  map.addLayer({
+    'id': 'accidents-layer',
+    'type': 'circle',
+    'source': 'accidents',
+    'source-layer': 'LAYER',
+    'layout': {},
+    'paint': {
+      'circle-radius': 3,
+      'circle-color': '#8B3626',
+      'circle-stroke-color': 'white',
+      'circle-stroke-width': 1,
+      'circle-opacity': 0.5}
+    });
+  });
+  map.on('click', 'accidents-layer', function(event) {
+    console.log(event.features);
+    const popup = new maplibregl.Popup();
+    const longitude = event.lngLat.lng;
+    const latitude = event.lngLat.lat;
+    popup.setLngLat({lng: (longitude), lat: latitude}).setHTML('<span> Date: ' + event.features[0].properties.UJAHR + '-' + event.features[1].properties.UMONAT + '<br\> Stunde: ' + event.features[2].properties.USTUNDE + '<br\> Wochentag: ' + event.features[3].properties.UWOCHENTAG + '<br\> Unfallart: ' + event.features[4].properties.UART + '<br\> Kategorie' + event.features[5].properties.UKATEGORIE +'</span>').addTo(map);
+  });
+  // Add zoom and rotation controls to the map
+  map.addControl(new maplibregl.NavigationControl());
+  // Add full screen map
+  map.addControl(new maplibregl.FullscreenControl());
+</script>
+</body>
+</html>

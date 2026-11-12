@@ -1,0 +1,8 @@
+event graph (
+    name: Graph Change
+)
+
+event selection (
+    name: Selection Change
+)
+

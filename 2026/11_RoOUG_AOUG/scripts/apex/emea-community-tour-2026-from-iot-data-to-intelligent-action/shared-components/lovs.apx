@@ -1,0 +1,136 @@
+lov unified-task-list-lov-due (
+    name: UNIFIED_TASK_LIST.LOV.DUE
+    source {
+        location: staticValues
+    }
+
+    entry 0 (
+        sequence: 1
+        display: Overdue
+        return: |0
+    )
+
+    entry 0-1 (
+        sequence: 2
+        display: Next hour
+        return: 0|1
+    )
+
+    entry 1-24 (
+        sequence: 3
+        display: Next 24 hours
+        return: 1|24
+    )
+
+    entry 168-720 (
+        sequence: 5
+        display: Next 30 days
+        return: 168|720
+    )
+
+    entry 24-168 (
+        sequence: 4
+        display: Next 7 days
+        return: 24|168
+    )
+
+    entry 720 (
+        sequence: 6
+        display: More than 30 days
+        return: 720|
+    )
+
+)
+
+lov unified-task-list-lov-initiated (
+    name: UNIFIED_TASK_LIST.LOV.INITIATED
+    source {
+        location: staticValues
+    }
+
+    entry 1 (
+        sequence: 1
+        display: Last hour
+        return: |1
+    )
+
+    entry 1-24 (
+        sequence: 2
+        display: Last 24 hours
+        return: 1|24
+    )
+
+    entry 168-720 (
+        sequence: 4
+        display: Last 30 days
+        return: 168|720
+    )
+
+    entry 24-168 (
+        sequence: 3
+        display: Last 7 days
+        return: 24|168
+    )
+
+    entry 720 (
+        sequence: 5
+        display: Older than 30 days
+        return: 720|
+    )
+
+)
+
+lov unified-task-list-lov-priority (
+    name: UNIFIED_TASK_LIST.LOV.PRIORITY
+    source {
+        type: sqlQuery
+        sqlQuery:
+            ```sql
+            select disp,
+                   val
+              from table ( apex_human_task.get_lov_priority )
+             order by insert_order
+            ```
+    }
+    columnMapping {
+        return: VAL
+        display: DISP
+    }
+)
+
+lov unified-task-list-lov-state (
+    name: UNIFIED_TASK_LIST.LOV.STATE
+    source {
+        type: sqlQuery
+        sqlQuery:
+            ```sql
+            select disp,
+                   val
+              from table ( apex_human_task.get_lov_state )
+             order by insert_order
+            ```
+    }
+    columnMapping {
+        return: VAL
+        display: DISP
+    }
+)
+
+lov unified-task-list-lov-type (
+    name: UNIFIED_TASK_LIST.LOV.TYPE
+    source {
+        type: sqlQuery
+        sqlQuery:
+            ```sql
+            select disp,
+                   val
+              from table ( apex_human_task.get_lov_type )
+             order by insert_order
+            ```
+    }
+    columnMapping {
+        return: VAL
+        display: DISP
+    }
+)
+

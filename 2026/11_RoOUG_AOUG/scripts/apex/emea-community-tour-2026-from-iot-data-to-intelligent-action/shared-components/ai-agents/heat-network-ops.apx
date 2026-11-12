@@ -1,0 +1,274 @@
+aiAgent heat_network_ops (
+    name: Heat Network Ops Agent
+    genAI {
+        service: @oci_genai
+        systemPrompt:
+            ```
+            You are the operations assistant for a district heating network. Operators ask
+            you about cold buildings, alarms, pump stations and what to do next.
+            
+            Tools
+            - Use the tools. Never guess numbers, asset ids or causes.
+            - Current situation: call AGENT_NETWORK_STATUS, then AGENT_ACTIVE_ANOMALIES with
+              MIN_SEVERITY = WARNING to name the assets behind alarms and warnings.
+            - "Why" questions: call AGENT_FIND_ROOT_CAUSE. It groups cold buildings into
+              incidents with a root-cause asset, evidence and a classification
+              (EQUIPMENT_PROBLEM or SUSPECTED_SENSOR_FAULT). For every equipment incident
+              also call AGENT_IMPACT_ANALYSIS with the root-cause asset.
+            - "What will fail next": call AGENT_PREDICT_FAILURES.
+            - Call AGENT_CREATE_WORK_ORDER only when the operator asks for a work order.
+              Priorities: P1 = people without heat now, P2 = failure expected within 48 h,
+              P3 = within 10 days, P4 = check.
+            
+            Content
+            - Write the asset id with the name, for example "PS-04 (Pump station Rahova)".
+              Put all anomalies of one asset in one line.
+            - Report life-critical buildings (hospital, nursing home, school) first.
+            - Never say that actions are underway, planned or done unless a tool result says
+              so (for example a work order returned by AGENT_CREATE_WORK_ORDER).
+            - Times in tool results are UTC (2026-10-29T17:17Z): write 2026-10-29 17:17 UTC.
+            
+            Answer format (always, at most 200 words)
+            Answer only the question asked. Never announce your own next steps such as
+            "Next, I will ...": you cannot act on your own; write them as suggestions under
+            Recommended actions. Use exactly these Markdown headings. Leave out Root cause
+            or Impact when no tool result supports them. The text in angle brackets
+            describes the content; replace it with facts from the tools.
+            
+            ### Situation
+            <cold buildings, apartments, districts; the assets in alarm or warning>
+            ### Root cause
+            <root-cause asset with id and name, evidence, classification>
+            ### Impact
+            <life-critical buildings first, then buildings and apartments; mitigation options>
+            ### Recommended actions
+            - <a check, decision or question for the operator, for example "Ask me for the
+              root cause of the cold buildings in Militari">
+            
+            ```
+        welcomeMessage: Good morning. Ask me about the network: situation, causes, impact, what will fail next, or a work order.
+    }
+    advanced {
+        temperature: 0.1
+    }
+
+    tool agent-active-anomalies (
+        name: agent_active_anomalies
+        type: retrieveData
+        executionPoint: onDemand
+        description: Open anomalies with asset, metric, severity, details and time, at or above a minimum severity.
+        settings {
+            type: functionBody
+            language: plsql
+            plsqlFunctionBody: RETURN agent_active_anomalies(NVL(UPPER(TRIM(:MIN_SEVERITY)), 'WATCH'));
+        }
+
+        parameter MIN_SEVERITY (
+            validation {
+                required: false
+            }
+        )
+
+    )
+
+    tool agent-asset-details (
+        name: agent_asset_details
+        type: retrieveData
+        executionPoint: onDemand
+        description: Details of one asset: type, district, equipment, health, latest readings, supplier, open work orders.
+        settings {
+            type: functionBody
+            language: plsql
+            plsqlFunctionBody: RETURN agent_asset_details(UPPER(TRIM(:ASSET_ID)));
+        }
+
+        parameter ASSET_ID (
+            description: Asset id, for example PS-04
+        )
+
+    )
+
+    tool agent-create-work-order (
+        name: agent_create_work_order
+        type: executeServersideCode
+        executionPoint: onDemand
+        description: Creates a work order for an asset. Use only when the operator asks for it.
+        settings {
+            language: plsql
+            plsqlCode:
+                ```plsql
+                DECLARE
+                  l_json CLOB;
+                BEGIN
+                  IF :PRIORITY NOT IN ('P1', 'P2', 'P3', 'P4') THEN
+                    apex_ai.set_tool_result(p_result => '{"error":"PRIORITY must be P1, P2, P3 or P4"}');
+                    RETURN;
+                  END IF;
+                  l_json := agent_create_work_order(p_asset_id => :ASSET_ID,
+                                                    p_priority => :PRIORITY,
+                                                    p_title    => :TITLE,
+                                                    p_details  => :DETAILS);
+                  apex_ai.set_tool_result(p_result => l_json);
+                END;
+                ```
+        }
+        userApproval {
+            requiresConfirmation: true
+            title: Create work order?
+            message: The agent wants to create a work order. Approve only if this is what you asked for.
+            confirmLabel: Create
+            cancelLabel: Cancel
+        }
+        notification {
+            message: Calling AGENT_CREATE_WORK_ORDER
+            type: info
+        }
+
+        parameter ASSET_ID (
+        )
+
+        parameter DETAILS (
+            validation {
+                required: false
+            }
+        )
+
+        parameter PRIORITY (
+        )
+
+        parameter TITLE (
+        )
+
+    )
+
+    tool agent-critical-assets (
+        name: agent_critical_assets
+        type: retrieveData
+        executionPoint: onDemand
+        description: Assets that most buildings depend on (graph analysis, PageRank).
+        settings {
+            type: functionBody
+            language: plsql
+            plsqlFunctionBody: RETURN agent_critical_assets(NVL(TO_NUMBER(:TOP_N DEFAULT NULL ON CONVERSION ERROR), 5));
+        }
+
+        parameter TOP_N (
+            description: Number of assets, default 5
+            validation {
+                required: false
+            }
+        )
+
+    )
+
+    tool agent-find-root-cause (
+        name: agent_find_root_cause
+        type: retrieveData
+        executionPoint: onDemand
+        description: Groups cold buildings into incidents with root-cause asset, evidence and classification. Optional: one district.
+        settings {
+            type: functionBody
+            language: plsql
+            plsqlFunctionBody: RETURN agent_find_root_cause(:DISTRICT);
+        }
+
+        parameter DISTRICT (
+            validation {
+                required: false
+            }
+        )
+
+    )
+
+    tool agent-impact-analysis (
+        name: agent_impact_analysis
+        type: retrieveData
+        executionPoint: onDemand
+        description: Buildings and apartments that depend on an asset, critical buildings, and bypass options with their effect.
+        settings {
+            type: functionBody
+            language: plsql
+            plsqlFunctionBody: RETURN agent_impact_analysis(UPPER(TRIM(:ASSET_ID)));
+        }
+
+        parameter ASSET_ID (
+            description: Asset id, for example PS-04
+        )
+
+    )
+
+    tool agent-maintenance-history (
+        name: agent_maintenance_history
+        type: retrieveData
+        executionPoint: onDemand
+        description: Maintenance history of one asset.
+        settings {
+            type: functionBody
+            language: plsql
+            plsqlFunctionBody: RETURN agent_maintenance_history(UPPER(TRIM(:ASSET_ID)));
+        }
+
+        parameter ASSET_ID (
+            description: Asset id, for example PS-04
+        )
+
+    )
+
+    tool agent-network-status (
+        name: agent_network_status
+        type: retrieveData
+        executionPoint: onDemand
+        description: Current state of the network: assets by health, buildings and apartments without heat, critical buildings, districts, open anomalies.
+        settings {
+            type: functionBody
+            language: plsql
+            plsqlFunctionBody: RETURN agent_network_status;
+        }
+    )
+
+    tool agent-predict-failures (
+        name: agent_predict_failures
+        type: retrieveData
+        executionPoint: onDemand
+        description: Assets whose trend reaches the alarm limit within a horizon, with the hours left.
+        settings {
+            type: functionBody
+            language: plsql
+            plsqlFunctionBody: RETURN agent_predict_failures(NVL(TO_NUMBER(:HORIZON_HOURS DEFAULT NULL ON CONVERSION ERROR), 240));
+        }
+
+        parameter HORIZON_HOURS (
+            description: Hours ahead, default 240
+            validation {
+                required: false
+            }
+        )
+
+    )
+
+    tool agent-what-if (
+        name: agent_what_if
+        type: retrieveData
+        executionPoint: onDemand
+        description: Simulates assets out of service and bypass valves opened; returns buildings without supply. Lists are comma-separated.
+        settings {
+            type: functionBody
+            language: plsql
+            plsqlFunctionBody: RETURN agent_what_if(UPPER(TRIM(:OUT_OF_SERVICE)), UPPER(TRIM(:OPEN_VALVES)));
+        }
+
+        parameter OPEN_VALVES (
+            description: Bypass ids, comma-separated, for example BYP-1
+            validation {
+                required: false
+            }
+        )
+
+        parameter OUT_OF_SERVICE (
+            description: Asset ids, comma-separated, for example PS-04
+        )
+
+    )
+
+)
+

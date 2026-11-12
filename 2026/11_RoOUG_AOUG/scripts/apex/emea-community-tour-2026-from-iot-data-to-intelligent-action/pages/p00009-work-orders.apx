@@ -1,0 +1,354 @@
+page 9 (
+    name: Work orders
+    alias: WORK-ORDERS
+    title: Work orders
+    appearance {
+        pageTemplate: @/standard
+        templateOptions: #DEFAULT#
+    }
+    navigation {
+        cursorFocus: doNotFocusCursor
+    }
+    security {
+        pageAccessProtection: argumentsMustHaveChecksum
+        formAutoComplete: false
+    }
+
+    region breadcrumb (
+        name: Breadcrumb
+        type: breadcrumb
+        source {
+            breadcrumb: @breadcrumb
+        }
+        layout {
+            sequence: 10
+            slot: breadcrumbBar
+        }
+        appearance {
+            template: @/title-bar
+            templateOptions: [
+                #DEFAULT#
+                t-BreadcrumbRegion--useBreadcrumbTitle
+            ]
+        }
+        componentAppearance {
+            breadcrumbTemplate: @/breadcrumb
+            templateOptions: #DEFAULT#
+        }
+    )
+
+    region work-orders (
+        name: Work orders
+        type: interactiveReport
+        source {
+            location: localDatabase
+            type: sqlQuery
+            sqlQuery:
+                ```sql
+                SELECT wo_id,
+                       CAST(created_at AS DATE)                       AS created_at,
+                       asset_type_name,
+                       asset_label,
+                       district,
+                       priority,
+                       title,
+                       status_label,
+                       CASE
+                         WHEN status = 'NEW' AND workflow_id IS NULL      THEN 'Not started'
+                         WHEN status IN ('NEW', 'PLANNED', 'IN_PROGRESS') THEN 'Running'
+                         ELSE 'Finished'
+                       END                                            AS workflow,
+                       CASE created_by WHEN 'AI_AGENT' THEN 'AI agent'
+                                       WHEN 'APEX'     THEN 'App'
+                                       ELSE created_by END            AS created_by,
+                       CASE WHEN status IN ('NEW', 'PLANNED', 'IN_PROGRESS') THEN 0 ELSE 1 END AS open_first
+                FROM   dh_work_orders_v
+                ```
+        }
+        layout {
+            sequence: 20
+            slot: body
+        }
+        appearance {
+            template: @/standard
+            templateOptions: [
+                #DEFAULT#
+                t-Region--scrollBody
+            ]
+        }
+        pagination {
+            type: rowRangesXToY
+        }
+        messages {
+            whenNoDataFound: No work orders yet.
+        }
+        actionsMenu {
+            subscription: false
+        }
+        advanced {
+            savedReportMappingIdentifier: 14680656691018593
+        }
+
+        column ASSET_LABEL (
+            type: plainText
+            heading {
+                heading: Asset
+            }
+            layout {
+                sequence: 4
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: D
+            }
+        )
+
+        column ASSET_TYPE_NAME (
+            type: plainText
+            heading {
+                heading: Asset type
+            }
+            layout {
+                sequence: 3
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: C
+            }
+        )
+
+        column CREATED_AT (
+            type: plainText
+            heading {
+                heading: Created
+            }
+            layout {
+                sequence: 2
+            }
+            appearance {
+                formatMask: YYYY-MM-DD HH24:MI
+            }
+            source {
+                dataType: DATE
+            }
+            advanced {
+                endUserAlias: B
+            }
+        )
+
+        column CREATED_BY (
+            type: plainText
+            heading {
+                heading: Created by
+            }
+            layout {
+                sequence: 10
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: J
+            }
+        )
+
+        column DISTRICT (
+            type: plainText
+            heading {
+                heading: District
+            }
+            layout {
+                sequence: 5
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: E
+            }
+        )
+
+        column OPEN_FIRST (
+            type: hidden
+            heading {
+                heading: Open first
+            }
+            layout {
+                sequence: 11
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: K
+            }
+        )
+
+        column PRIORITY (
+            type: plainText
+            heading {
+                heading: Priority
+            }
+            layout {
+                sequence: 6
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: F
+            }
+        )
+
+        column STATUS_LABEL (
+            type: plainText
+            heading {
+                heading: Status
+            }
+            layout {
+                sequence: 8
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: H
+            }
+        )
+
+        column TITLE (
+            type: plainText
+            heading {
+                heading: Title
+            }
+            layout {
+                sequence: 7
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: G
+            }
+        )
+
+        column WORKFLOW (
+            type: plainText
+            heading {
+                heading: Workflow
+            }
+            layout {
+                sequence: 9
+            }
+            source {
+                dataType: STRING
+            }
+            advanced {
+                endUserAlias: I
+            }
+        )
+
+        column WO_ID (
+            type: link
+            heading {
+                heading: No.
+                alignment: end
+            }
+            layout {
+                sequence: 1
+                columnAlignment: end
+            }
+            link {
+                target: {
+                    page: 6
+                    items: {
+                        P6_WO_ID: #WO_ID#
+                    }
+                    clearCache: 6
+                }
+                linkText: #WO_ID#
+            }
+            source {
+                dataType: NUMBER
+            }
+            advanced {
+                endUserAlias: A
+            }
+        )
+
+        page {
+            borderWidth: 0.5
+            borderColor: #666666
+        }
+
+        savedReport 900000901 (
+            visibility: primaryDefault
+            view {
+                rowsPerPage: 50
+            }
+
+            displayColumn ASSET_LABEL (
+                sequence: 4
+            )
+
+            displayColumn ASSET_TYPE_NAME (
+                sequence: 3
+            )
+
+            displayColumn CREATED_AT (
+                sequence: 2
+            )
+
+            displayColumn CREATED_BY (
+                sequence: 10
+            )
+
+            displayColumn DISTRICT (
+                sequence: 5
+            )
+
+            displayColumn PRIORITY (
+                sequence: 6
+            )
+
+            displayColumn STATUS_LABEL (
+                sequence: 8
+            )
+
+            displayColumn TITLE (
+                sequence: 7
+            )
+
+            displayColumn WORKFLOW (
+                sequence: 9
+            )
+
+            displayColumn WO_ID (
+                sequence: 1
+            )
+
+            sort (
+                column: OPEN_FIRST
+                sort {
+                    sequence: 1
+                }
+            )
+
+            sort (
+                column: WO_ID
+                sort {
+                    direction: desc
+                    sequence: 2
+                }
+            )
+
+        )
+
+    )
+
+)
+

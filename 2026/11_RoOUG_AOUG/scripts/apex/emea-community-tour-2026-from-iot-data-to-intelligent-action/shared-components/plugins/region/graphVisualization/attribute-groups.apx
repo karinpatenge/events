@@ -1,0 +1,72 @@
+attributeGroup advanced (
+    name: Advanced
+    sequence: 30
+    advanced {
+        staticId: advanced
+    }
+)
+
+attributeGroup appearance (
+    name: Appearance
+    sequence: 10
+    advanced {
+        staticId: appearance
+    }
+)
+
+attributeGroup callbacks (
+    name: Callbacks
+    sequence: 40
+    advanced {
+        staticId: callbacks
+    }
+)
+
+attributeGroup caption (
+    name: Caption
+    sequence: 21
+    advanced {
+        staticId: caption
+    }
+)
+
+attributeGroup evolution (
+    name: Evolution
+    sequence: 22
+    advanced {
+        staticId: evolution
+    }
+)
+
+attributeGroup expand (
+    name: Expand
+    sequence: 24
+    advanced {
+        staticId: expand
+    }
+)
+
+attributeGroup layout (
+    name: Layout
+    sequence: 20
+    advanced {
+        staticId: layout
+    }
+)
+
+attributeGroup legend (
+    name: Legend
+    sequence: 15
+    advanced {
+        staticId: legend
+    }
+)
+
+attributeGroup schema (
+    name: Schema
+    sequence: 23
+    advanced {
+        staticId: schema
+    }
+)
+

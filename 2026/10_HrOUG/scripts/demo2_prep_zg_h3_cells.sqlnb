@@ -1,0 +1,1477 @@
+cells:
+  - kind: 1
+    value: >-
+      # Demo 2 Preparation: H3 Cells with Land Surface Temperature
+
+
+      **HrOUG 2026 · Spatial Meets AI**
+
+
+      Environment: Oracle Autonomous AI Database 26ai
+
+
+      This notebook builds `ZG_H3_CELLS`, the input of the Spatial AI notebook
+      `demo2_sai_lisa_hotspot_clustering.dsnb`: H3 cells at resolution 9 (about
+      0.1 km² each) over the City of Zagreb, each with the mean land surface
+      temperature of a heat-wave day.
+
+
+      The temperature raster stays in the database as a GeoRaster object. The H3
+      cells come from `SDO_UTIL.H3_KEY` and `SDO_UTIL.H3_BOUNDARY`, and the mean
+      temperature per cell from `SDO_GEOR.generateStatisticsMean`.
+    languageId: markdown
+  - kind: 1
+    value: |-
+      ## Table of Contents
+
+      1. Data Sources
+      2. Session Setup
+      3. Enable GeoRaster
+      4. Load the GeoTIFF with Spatial Studio
+      5. Clean Up
+      6. Connect the GeoRaster
+      7. Raster Access Package
+      8. H3 Cells Table
+      9. Fill the Table
+      10. Spatial Index and Statistics
+      11. Checks
+      12. Use the Results in Spatial Studio
+      13. Preparation End
+    languageId: markdown
+  - kind: 1
+    value: |-
+      ## 1. Data Sources
+
+      | Item | Value |
+      |---|---|
+      | Scene | `LC08_L2SP_189028_20260802_02_T1`: Landsat 8, Collection 2 Level-2, WRS-2 path 189, row 28 |
+      | Acquired | 2 August 2026, 09:39 UTC (11:39 in Zagreb) |
+      | Cloud cover | 1.56% for the whole scene; over the city, 2 of about 712,600 pixels |
+      | Band | ST_B10 surface temperature: Kelvin = DN × 0.00341802 + 149.0 |
+      | Access | [Microsoft Planetary Computer: Landsat Collection 2 Level-2](https://planetarycomputer.microsoft.com/dataset/landsat-c2-l2) (STAC and data API, no account needed) |
+      | File | `data/ZG_HEAT_RASTERS.tif`: °C, float32, EPSG:4326, 1,209 × 1,320 pixels of about 30 m, NoData −9999 outside the city, 1.4 MB |
+      | Valid pixels | 711,436: 27.8 to 58.1 °C, mean 38.2 °C |
+      | City boundary | `data/zg_city_boundary.geojson`: Grad Zagreb, OSM relation 226224 (via Nominatim) |
+
+      **Why this scene.** The heat wave lasted from 28 July to 16 August 2026, and from 31 July the heat-wave criteria were met at all eight main stations, Zagreb-Maksimir included. Three scenes in that period are practically cloud-free over Zagreb: 2, 9 and 10 August. The 2 August scene is the closest to the demo days 29–31 July.
+
+      **Surface temperature is not air temperature.** Landsat measures how hot surfaces get (asphalt, roofs, grass, water) at the time of the overpass, late morning.
+
+      **Gaps.** About 1,200 pixels (about 1 km²) in the east of the city have no surface temperature in the Landsat product. They are NoData, like clouds and cloud shadows (`QA_PIXEL` bits 1, 3 and 4).
+
+      Attribution: Landsat data courtesy of the U.S. Geological Survey. City boundary © OpenStreetMap contributors, [ODbL](https://www.openstreetmap.org/copyright).
+
+      References:
+      * [Landsat Collection 2 Level-2 Science Products (USGS)](https://www.usgs.gov/landsat-missions/landsat-collection-2-level-2-science-products)
+      * [H3 indexing (26ai)](https://docs.oracle.com/en/database/oracle/oracle-database/26/spatl/h3-indexing.html)
+      * [SDO_GEOR.generateStatisticsMean (26ai)](https://docs.oracle.com/en/database/oracle/oracle-database/26/geors/sdo_geor-generatestatisticsmean.html)
+    languageId: markdown
+  - kind: 1
+    value: >-
+      ## 2. Session Setup
+
+
+      The Data Lakehouse workload ignores hints by default. Enable them for this
+      session, so the `NO_RESULT_CACHE` hint in section 3 takes effect.
+    languageId: markdown
+  - kind: 2
+    value: |
+      SET TIMING ON
+      SET SERVEROUTPUT ON
+      ALTER SESSION SET NLS_NUMERIC_CHARACTERS='.,'
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Enable hints for this session (ignored by default on Autonomous AI
+      Database)
+
+      --
+
+
+      ALTER SESSION SET OPTIMIZER_IGNORE_HINTS = FALSE;
+    languageId: oracle-sql
+  - kind: 1
+    value: |-
+      ## 3. Enable GeoRaster
+
+      GeoRaster is disabled by default and must be enabled once for each schema that uses it: for the Spatial Studio upload in section 4 and for the GeoRaster functions in this notebook. Run this section as the schema user of the notebook.
+
+      1. GeoRaster needs the `CREATE TRIGGER` privilege. The first cell checks it. If there is no row with `GRANTED = direct`, ask the ADMIN user to run `GRANT CREATE TRIGGER TO <schema>;`.
+      2. `SDO_GEOR_ADMIN.enableGeoRaster` enables GeoRaster for the schema. It only needs to run once; the cell checks first, so it can run again.
+      3. `SDO_GEOR_ADMIN.isGeoRasterEnabled` must return `TRUE`. The `NO_RESULT_CACHE` hint avoids a cached answer, as the documentation recommends.
+
+      Reference: [Enabling GeoRaster at the schema level (26ai)](https://docs.oracle.com/en/database/oracle/oracle-database/26/geors/enabling-georaster-schema-level.html)
+    languageId: markdown
+  - kind: 2
+    value: >
+      --
+
+      -- Check if CREATE TRIGGER privilege is already granted
+
+      --
+
+
+      SELECT 'direct' AS granted, privilege FROM user_sys_privs WHERE privilege
+      = 'CREATE TRIGGER'
+
+      UNION ALL
+
+      SELECT 'in this session (direct or through a role)', privilege FROM
+      session_privs WHERE privilege = 'CREATE TRIGGER';
+    languageId: oracle-sql
+  - kind: 2
+    value: "--\r
+
+      -- Run only if needed as ADMIN in ADB (or as a user with SYSDBA
+      privileges)\r
+
+      -- Edit the placeholders before running the paragraph.\r
+
+      --\r
+
+      \r
+
+      -- GRANT CREATE TRIGGER TO <schema>;\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: "--\r
+
+      -- Run only if needed as ADMIN in ADB (or as a user with SYSDBA
+      privileges)\r
+
+      -- This enables configuring Spatial Studio for uploading raster data\r
+
+      --\r
+
+      \r
+
+      -- ALTER USER <schema> DEFAULT ROLE \"SPATIAL_ADMIN\";\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Enable GeoRaster for this schema (only once; skipped if it is already
+      enabled)
+
+      -- Edit the placeholders before running the paragraph.
+
+      --
+
+
+      DECLARE
+        l_enabled VARCHAR2(5) := SDO_GEOR_ADMIN.isGeoRasterEnabled;    -- called in PL/SQL: no result cache
+      BEGIN
+        IF l_enabled = 'TRUE' THEN
+          DBMS_OUTPUT.PUT_LINE('GeoRaster is already enabled for ' || USER);
+        ELSE
+          SDO_GEOR_ADMIN.enableGeoRaster;
+          DBMS_OUTPUT.PUT_LINE('GeoRaster enabled for ' || USER);
+        END IF;
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Verify: expected TRUE
+
+      --
+
+
+      SELECT /*+ NO_RESULT_CACHE */ SDO_GEOR_ADMIN.isGeoRasterEnabled AS
+      georaster_enabled FROM dual;
+    languageId: oracle-sql
+  - kind: 1
+    value: |-
+      ## 4. Load the GeoTIFF with Spatial Studio
+
+      On Autonomous AI Database, GeoTIFF files are loaded as GeoRaster objects with Spatial Studio (`SDO_GEOR.importFrom` and `SDO_GEOR_GDAL` are not available there).
+
+      1. Open Spatial Studio in the Autonomous AI Database, connected to the schema of this notebook. GeoRaster must be enabled for the schema (section 3).
+      2. Upload file `data/zg_lst_20260802.tif` to the bucket in the Oracle Cloud Infrastructure Object Storage.
+      3. Create a GeoRaster dataset using the URL of a pre-authenticated request for the file or Object Storage bucket. If needed, follow the instructions in the [Spatial Studio User Guide](https://docs.oracle.com/en/database/oracle/spatial-studio/26.1/spstu/creating-dataset-datasets-page.html).  
+
+        An alternative option is to use GDAL with the GeoRaster driver to load the raster into the Autonmous AI Database. The following command is an example to load the raster. Create the required GeoRaster and RDT table in advance:
+
+        ```
+        gdal_translate -of georaster zg_lst_20260802.tif georaster:$DBUSER/$DBPWD@$DBSERVICE,zg_heat_rasters,georaster \
+            -co insert="(GEORID, SOURCE_FILE, GEORASTER, CAPTURE_DATE) values (1, 'zg_lst_20260802.tif', sdo_geor.init('zg_heat_rasters_rdt', 1), '20260802')" \
+            -co blockxsize=256 -co blockysize=256 -co blockbsize=1 \
+            -co blocking=optimalpadding -co interleave=BIP \
+            -co spatialextent=true -co srid=4326
+        ```
+
+      3. Name the table `ZG_HEAT_RASTERS`. For another name, change `c_table` in section 6.
+      4. Optional, for maps: upload `data/zg_city_boundary.geojson` as a vector dataset `ZG_CITY_BOUNDARY`. This notebook doesn't need it, because the GeoTIFF is already clipped to the city.
+    languageId: markdown
+  - kind: 1
+    value: >-
+      ## 5. Clean Up
+
+
+      Removes the objects this notebook creates, so it can run again. The
+      GeoRaster table loaded with Spatial Studio is kept, and GeoRaster stays
+      enabled for the schema.
+    languageId: markdown
+  - kind: 2
+    value: >
+      --
+
+      -- Remove the objects of this notebook (the GeoRaster table from Spatial
+      Studio stays)
+
+      --
+
+
+      DROP TABLE IF EXISTS zg_h3_cells PURGE;
+
+      DROP TABLE IF EXISTS zg_lst_pixels PURGE;
+
+      DROP TABLE IF EXISTS zg_lst_points PURGE;
+
+      DROP TABLE IF EXISTS zg_lst_h3sum PURGE;
+
+      DROP VIEW IF EXISTS zg_lst_vw;
+
+      DROP PACKAGE IF EXISTS zg_lst;
+    languageId: oracle-sql
+  - kind: 1
+    value: >-
+      ## 6. Verify the GeoRaster upload
+
+
+      Spatial Studio chooses the GeoRaster column and the raster id. The next
+      cells look them up in `USER_SDO_GEOR_SYSDATA`, validate the object, and
+      create the view `ZG_LST_VW` with one row and one column, `RASTER`, so the
+      rest of the notebook doesn't depend on those names. If the table holds
+      several rasters, the view uses the newest one. Set `c_table` to the
+      Spatial Studio table in both PL/SQL cells.
+
+
+      The notebook only reads the GeoRaster object and never changes its
+      metadata. Pixels with −9999 (outside the city, gaps) are skipped by the
+      package in section 7, so no NODATA entry is needed.
+
+
+      **If the validation does not return `TRUE`**, for example ORA-13454
+      (metadata not valid against the GeoRaster XML schema), the object can't be
+      used: `SDO_GEOR.schemaValidate` names the invalid element and its
+      location. Delete the raster in Spatial Studio and upload
+      `data/zg_lst_20260802.tif` again. An earlier version of this notebook
+      added NODATA with `SDO_GEOR.addNODATA` and wrote the object back; that is
+      a likely cause.
+    languageId: markdown
+  - kind: 2
+    value: "TRUNCATE TABLE zg_heat_rasters DROP STORAGE\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: |
+      --
+      -- GeoRaster objects in this schema
+      --
+
+      SELECT table_name, column_name, raster_id, rdt_table_name
+      FROM user_sdo_geor_sysdata
+      ORDER BY table_name;
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Validate the loaded GeoRaster: TRUE, or the error codes and their
+      location in the metadata
+
+      --
+
+
+      DECLARE
+        c_table  CONSTANT VARCHAR2(128) := 'ZG_HEAT_RASTERS'; 
+        l_col    VARCHAR2(130);
+        l_valid  VARCHAR2(4000);
+        l_schema VARCHAR2(32767);
+      BEGIN
+        FOR g IN (SELECT column_name, raster_id FROM user_sdo_geor_sysdata WHERE table_name = c_table ORDER BY raster_id) LOOP
+          l_col := DBMS_ASSERT.ENQUOTE_NAME(g.column_name, FALSE);
+          EXECUTE IMMEDIATE
+            'SELECT SDO_GEOR.validateGeoRaster(t.' || l_col || '), SDO_GEOR.schemaValidate(t.' || l_col || ')'
+            || ' FROM ' || DBMS_ASSERT.ENQUOTE_NAME(c_table, FALSE) || ' t WHERE t.' || l_col || '.rasterid = :id'
+            INTO l_valid, l_schema USING g.raster_id;
+          DBMS_OUTPUT.PUT_LINE('raster id ' || g.raster_id || ': validateGeoRaster = ' || l_valid
+                               || ', schemaValidate = ' || l_schema);
+        END LOOP;
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: "--\r
+
+      -- Procedure to generate GeoRaster pyramids in a specified table and
+      column\r
+
+      --\r
+
+      create or replace procedure proc_generate_pyramids(\r
+
+      \  p_table_name      in varchar2,\r
+
+      \  p_column_name     in varchar2,\r
+
+      \  p_id_column_name  in varchar2   default 'GEORID',\r
+
+      \  p_rlevel          in pls_integer default 100,   -- e.g., 100; Specifies
+      the maximum reduction level\r
+
+      \  p_nodata          in boolean    default true,   -- include
+      nodata=TRUE/FALSE\r
+
+      \  p_resampling      in varchar2   default 'NN',   -- e.g., 'NN',
+      'Bilinear', 'Cubic', etc.\r
+
+      \  p_parallel        in pls_integer default 16     -- parallel degree\r
+
+      ) is\r
+
+      \  l_table_name   varchar2(128);\r
+
+      \  l_column_name  varchar2(128);\r
+
+      \  l_id_column_name  varchar2(128);\r
+
+      \r
+
+      \  l_gr           sdo_georaster;\r
+
+      \  l_id           number;\r
+
+      \r
+
+      \  l_sql_cur      varchar2(4000);\r
+
+      \  l_sql_sel      varchar2(4000);\r
+
+      \  l_sql_upd      varchar2(4000);\r
+
+      \r
+
+      \  l_pyr_params   varchar2(4000);\r
+
+      \  l_parallel     varchar2(100);\r
+
+      \r
+
+      \  -- cursor over ID column\r
+
+      \  type rc is ref cursor;\r
+
+      \  c rc;\r
+
+      \r
+
+      \  -- helper to normalize/validate resampling method\r
+
+      \  function norm_resampling(p_method varchar2) return varchar2 is\r
+
+      \    l_upper varchar2(30) := upper(trim(p_method));\r
+
+      \  begin\r
+
+      \    -- Allow common GeoRaster resampling tokens; adjust if your
+      environment supports others\r
+
+      \    if l_upper in ('NN','NEAREST','NEAREST_NEIGHBOR') then\r
+
+      \      return 'NN';\r
+
+      \    elsif l_upper in ('BILINEAR') then\r
+
+      \      return 'BILINEAR';\r
+
+      \    elsif l_upper in ('BIQUADRATIC') then\r
+
+      \      return 'BIQUADRATIC';\r
+
+      \    elsif l_upper in ('CUBIC') then\r
+
+      \      return 'CUBIC';\r
+
+      \    elsif l_upper in ('AVERAGE4','AVG4') then\r
+
+      \      return 'AVERAGE4';\r
+
+      \    elsif l_upper in ('AVERAGE16','AVG16') then\r
+
+      \      return 'AVERAGE16';\r
+
+      \    elsif l_upper in ('OTHER') then\r
+
+      \      return 'OTHER';\r
+
+      \    else\r
+
+      \      raise_application_error(-20001, 'Unsupported resampling method: '
+      || p_method);\r
+
+      \    end if;\r
+
+      \  end;\r
+
+      \r
+
+      begin\r
+
+      \  -- Validate identifiers\r
+
+      \  l_table_name  := dbms_assert.sql_object_name(p_table_name);\r
+
+      \  l_column_name := dbms_assert.simple_sql_name(p_column_name);\r
+
+      \  l_id_column_name := dbms_assert.simple_sql_name(p_id_column_name);\r
+
+      \r
+
+      \  -- Build parameter strings\r
+
+      \  l_pyr_params :=\r
+
+      \       'rLevel='  || to_char(nvl(p_rlevel, 100))\r
+
+      \    || ', nodata=' || case when p_nodata then 'TRUE' else 'FALSE' end\r
+
+      \    || ', resampling=' || norm_resampling(p_resampling);\r
+
+      \r
+
+      \  l_parallel := 'parallel=' || to_char(nvl(p_parallel, 4));\r
+
+      \r
+
+      \  -- Define cursor SQL to return all IDs\r
+
+      \  l_sql_cur :=\r
+
+      \    'select ' || l_id_column_name ||\r
+
+      \    '  from ' || l_table_name ||\r
+
+      \    ' where sdo_geor.getPyramidMaxLevel(' || l_column_name || ') = 0'
+      ||\r
+
+      \    ' order by ' || l_id_column_name;\r
+
+      \r
+
+      \  open c for l_sql_cur;\r
+
+      \r
+
+      \  loop\r
+
+      \    fetch c into l_id;\r
+
+      \    exit when c%notfound;\r
+
+      \r
+
+      \    -- Select the GeoRaster FOR UPDATE\r
+
+      \    l_sql_sel :=\r
+
+      \      'select ' || l_column_name ||\r
+
+      \      '  from ' || l_table_name ||\r
+
+      \      ' where ' || l_id_column_name || ' = :1 ' ||\r
+
+      \      ' for update';\r
+
+      \r
+
+      \    execute immediate l_sql_sel into l_gr using l_id;\r
+
+      \r
+
+      \    -- Generate pyramids\r
+
+      \    sdo_geor.generatepyramid(\r
+
+      \      georaster     => l_gr,\r
+
+      \      pyramidParams => l_pyr_params,\r
+
+      \      parallelParam => l_parallel\r
+
+      \    );\r
+
+      \r
+
+      \    -- Update the row with the modified GeoRaster\r
+
+      \    l_sql_upd :=\r
+
+      \      'update ' || l_table_name ||\r
+
+      \      '   set ' || l_column_name || ' = :gr ' ||\r
+
+      \      ' where ' || l_id_column_name || ' = :id';\r
+
+      \r
+
+      \    execute immediate l_sql_upd using in l_gr, in l_id;\r
+
+      \r
+
+      \    commit;\r
+
+      \r
+
+      \  end loop;\r
+
+      \r
+
+      \  close c;\r
+
+      \r
+
+      exception\r
+
+      \  when others then\r
+
+      \    if c%isopen then\r
+
+      \      close c;\r
+
+      \    end if;\r
+
+      \    raise;\r
+
+      \r
+
+      end proc_generate_pyramids;\r
+
+      /\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: "--\r
+
+      -- Generate pyramids\r
+
+      --\r
+
+      begin\r
+
+      \  proc_generate_pyramids(\r
+
+      \    p_table_name     => 'ZG_HEAT_RASTERS',\r
+
+      \    p_column_name    => 'GEORASTER',\r
+
+      \    p_id_column_name => 'GEORID',\r
+
+      \    p_rlevel         => 100,\r
+
+      \    p_nodata         => true,\r
+
+      \    p_resampling     => 'Bilinear',\r
+
+      \    p_parallel       => 16\r
+
+      \  );\r
+
+      end;\r
+
+      /\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: "--\r
+
+      -- Procedure to generate GeoRaster statistics in a specified table and
+      column\r
+
+      --\r
+
+      create or replace procedure proc_generate_stats(\r
+
+      \  p_table_name       in varchar2,\r
+
+      \  p_column_name      in varchar2    default 'GEORASTER',\r
+
+      \  p_nodata           in boolean     default true,\r
+
+      \  p_sampling_factor  in pls_integer default 4,\r
+
+      \  p_histogram        in boolean     default true,\r
+
+      \  p_layer_numbers    in varchar2    default null,  -- e.g., '0,1,2';
+      '0-2'; NULL = all layers\r
+
+      \  p_id_column_name   in varchar2    default 'GEORID'\r
+
+      ) is\r
+
+      \  l_table_name   varchar2(161);\r
+
+      \  l_column_name  varchar2(128);\r
+
+      \  l_id_column_name  varchar2(128);\r
+
+      \r
+
+      \  l_sampling_factor_str varchar2(100);\r
+
+      \  l_hist_str            varchar2(10);\r
+
+      \  l_nodata_str          varchar2(10);\r
+
+      \r
+
+      \  l_gr    sdo_georaster;\r
+
+      \  l_win   sdo_geometry := null;\r
+
+      \  l_stat  varchar2(4000);\r
+
+      \  l_id    number;\r
+
+      \r
+
+      \  l_sql_cur   varchar2(4000);\r
+
+      \  l_sql_sel   varchar2(4000);\r
+
+      \  l_sql_upd   varchar2(4000);\r
+
+      \r
+
+      \  -- cursor over GEORID\r
+
+      \  type rc is ref cursor;\r
+
+      \  c rc;\r
+
+      begin\r
+
+      \  -- Validate identifiers\r
+
+      \  l_table_name  := dbms_assert.sql_object_name(p_table_name);\r
+
+      \  l_column_name := dbms_assert.simple_sql_name(p_column_name);\r
+
+      \  l_id_column_name := dbms_assert.simple_sql_name(p_id_column_name);\r
+
+      \r
+
+      \  -- Build parameter strings for SDO_GEOR.GENERATESTATISTICS\r
+
+      \  l_sampling_factor_str := 'samplingFactor=' ||
+      to_char(nvl(p_sampling_factor, 4));\r
+
+      \  l_hist_str            := case when p_histogram then 'TRUE' else 'FALSE'
+      end;\r
+
+      \  l_nodata_str          := case when p_nodata then 'TRUE' else 'FALSE'
+      end;\r
+
+      \r
+
+      \  -- Define cursor SQL to return all GEORID values\r
+
+      \  l_sql_cur :=\r
+
+      \    'select ' || l_id_column_name ||\r
+
+      \    '  from ' || l_table_name ||\r
+
+      \    ' where sdo_geor.getstatistics(' || l_column_name || ', 0) is null'
+      ||\r
+
+      \    ' order by ' || l_id_column_name;\r
+
+      \r
+
+      \  open c for l_sql_cur;\r
+
+      \r
+
+      \  loop\r
+
+      \    fetch c into l_id;\r
+
+      \    exit when c%notfound;\r
+
+      \r
+
+      \    -- Select the row for update (GeoRaster column)\r
+
+      \    l_sql_sel :=\r
+
+      \      'select ' || l_column_name ||\r
+
+      \      '  from ' || l_table_name ||\r
+
+      \      ' where ' || l_id_column_name || ' = :1 ' ||\r
+
+      \      ' for update';\r
+
+      \r
+
+      \    execute immediate l_sql_sel into l_gr using l_id;\r
+
+      \r
+
+      \    -- Generate statistics\r
+
+      \    l_stat := sdo_geor.generateStatistics(\r
+
+      \                georaster      => l_gr,\r
+
+      \                samplingFactor => l_sampling_factor_str,\r
+
+      \                samplingWindow => l_win,\r
+
+      \                histogram      => l_hist_str,\r
+
+      \                layerNumbers   => p_layer_numbers,   -- NULL => all
+      layers\r
+
+      \                nodata         => l_nodata_str\r
+
+      \              );\r
+
+      \r
+
+      \    -- Update the row with the modified GeoRaster object\r
+
+      \    l_sql_upd :=\r
+
+      \      'update ' || l_table_name ||\r
+
+      \      '   set ' || l_column_name || ' = :1 ' ||\r
+
+      \      ' where ' || l_id_column_name || ' = :2';\r
+
+      \r
+
+      \    execute immediate l_sql_upd using in l_gr, in l_id;\r
+
+      \r
+
+      \    commit;\r
+
+      \  end loop;\r
+
+      \r
+
+      \  close c;\r
+
+      \r
+
+      exception\r
+
+      \  when others then\r
+
+      \    if c%isopen then\r
+
+      \      close c;\r
+
+      \    end if;\r
+
+      \    raise;\r
+
+      \r
+
+      end proc_generate_stats;\r
+
+      /\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: "--\r
+
+      -- Generate statistics\r
+
+      --\r
+
+      BEGIN\r
+
+      \  PROC_GENERATE_STATS(\r
+
+      \    p_table_name       => 'ZG_HEAT_RASTERS',\r
+
+      \    p_column_name      => 'GEORASTER',\r
+
+      \    p_nodata           => true,\r
+
+      \    p_sampling_factor  => 2,     -- uses 1/4 of pixels (every 2x2)\r
+
+      \    p_histogram        => true,\r
+
+      \    p_layer_numbers    => null,  -- all layers\r
+
+      \    p_id_column_name   => 'GEORID'\r
+
+      \  );\r
+
+      end;\r
+
+      /\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Re-validate the loaded GeoRaster after generating pyramids and stats:
+      TRUE, or the error codes and their location in the metadata
+
+      --
+
+
+      DECLARE
+        c_table  CONSTANT VARCHAR2(128) := 'ZG_HEAT_RASTERS'; 
+        l_col    VARCHAR2(130);
+        l_valid  VARCHAR2(4000);
+        l_schema VARCHAR2(32767);
+      BEGIN
+        FOR g IN (SELECT column_name, raster_id FROM user_sdo_geor_sysdata WHERE table_name = c_table ORDER BY raster_id) LOOP
+          l_col := DBMS_ASSERT.ENQUOTE_NAME(g.column_name, FALSE);
+          EXECUTE IMMEDIATE
+            'SELECT SDO_GEOR.validateGeoRaster(t.' || l_col || '), SDO_GEOR.schemaValidate(t.' || l_col || ')'
+            || ' FROM ' || DBMS_ASSERT.ENQUOTE_NAME(c_table, FALSE) || ' t WHERE t.' || l_col || '.rasterid = :id'
+            INTO l_valid, l_schema USING g.raster_id;
+          DBMS_OUTPUT.PUT_LINE('raster id ' || g.raster_id || ': validateGeoRaster = ' || l_valid
+                               || ', schemaValidate = ' || l_schema);
+        END LOOP;
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Create view ZG_LST_VW on the surface temperature raster (read only: the
+      GeoRaster object is not changed)
+
+      --
+
+
+      DECLARE
+        c_table     CONSTANT VARCHAR2(128) := 'ZG_HEAT_RASTERS';          -- table name chosen in Spatial Studio
+        l_column    user_sdo_geor_sysdata.column_name%TYPE;
+        l_raster_id user_sdo_geor_sysdata.raster_id%TYPE;
+        l_col       VARCHAR2(130);
+        l_tab       VARCHAR2(130);
+        l_valid     VARCHAR2(4000);
+      BEGIN
+        -- the newest GeoRaster of the table, for example after a new upload
+        SELECT column_name, raster_id
+        INTO   l_column, l_raster_id
+        FROM   user_sdo_geor_sysdata
+        WHERE  table_name = c_table
+        ORDER BY raster_id DESC
+        FETCH FIRST 1 ROW ONLY;
+
+        l_col := DBMS_ASSERT.ENQUOTE_NAME(l_column, FALSE);
+        l_tab := DBMS_ASSERT.ENQUOTE_NAME(c_table, FALSE);
+
+        -- stop with a clear message if the object is not valid
+        EXECUTE IMMEDIATE 'SELECT SDO_GEOR.validateGeoRaster(t.' || l_col || ') FROM ' || l_tab || ' t WHERE t.' || l_col || '.rasterid = :id'
+          INTO l_valid USING l_raster_id;
+        IF l_valid IS NULL OR l_valid <> 'TRUE' THEN
+          RAISE_APPLICATION_ERROR(-20901, 'GeoRaster ' || c_table || ', raster id ' || l_raster_id || ' is not valid ('
+            || l_valid || '). Upload the GeoTIFF again with Spatial Studio.');
+        END IF;
+
+        EXECUTE IMMEDIATE 'CREATE OR REPLACE VIEW zg_lst_vw AS SELECT t.' || l_col || ' AS raster FROM ' || l_tab
+          || ' t WHERE t.' || l_col || '.rasterid = ' || l_raster_id;
+        DBMS_OUTPUT.PUT_LINE('View ZG_LST_VW -> ' || c_table || '.' || l_column || ', raster id ' || l_raster_id);
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Check the raster: expected SRID 4326, 1320 rows x 1209 columns, 32-bit
+      cells (NODATA: as set by the import, or empty)
+
+      --
+
+
+      SELECT
+        SDO_GEOR.getModelSRID(raster)          AS model_srid,
+        SDO_GEOR.getSpatialDimSizes(raster)    AS rows_columns,
+        SDO_GEOR.getCellDepth(raster)          AS cell_depth_bits,
+        SDO_GEOR.getBandDimSize(raster)        AS band_dim_size,
+        SDO_GEOR.getNODATA(raster, 0)          AS nodata,
+        SDO_GEOR.generateSpatialExtent(raster) AS extent
+      FROM
+        zg_lst_vw;
+    languageId: oracle-sql
+  - kind: 1
+    value: >-
+      ## 7. GeoRaster Access Package
+
+
+      `ZG_LST` reads the GeoRaster object once per session:
+
+      * `LOAD_PIXELS`: reads the whole raster with `SDO_GEOR.getCellValues`, 64
+      rows (about 77,000 cells) per call, and stores the valid pixels as points
+      in `ZG_LST_PIXELS`. 21 calls cover the raster.
+
+      * `VALUE_AT`: the surface temperature of the pixel at a point, for single
+      checks.
+
+
+      Both skip the value −9999 themselves, so they don't depend on a NODATA
+      entry in the metadata.
+
+
+      **Why a bulk read.** Every GeoRaster call has a fixed cost: it reads the
+      metadata of the object and converts between model and cell coordinates.
+      One call per H3 cell, about 14,000 centre tests plus 6,000 means, ran for
+      more than 40 minutes. Reading the raster in a few large calls and
+      aggregating with SQL avoids that.
+    languageId: markdown
+  - kind: 2
+    value: >
+      CREATE OR REPLACE PACKAGE zg_lst AS
+
+        -- Read the whole raster in bulk and store its valid pixels (centre lon/lat, °C) in ZG_LST_PIXELS
+        PROCEDURE load_pixels;
+
+        -- Surface temperature (°C) of the pixel at a point; NULL for NODATA or outside the raster
+        FUNCTION value_at (p_point IN SDO_GEOMETRY) RETURN NUMBER;
+
+      END zg_lst;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      CREATE OR REPLACE PACKAGE BODY zg_lst AS
+
+        c_nodata CONSTANT NUMBER := -9999;
+        g_raster SDO_GEORASTER;                                         -- read once per session
+
+        FUNCTION lst_raster RETURN SDO_GEORASTER IS
+        BEGIN
+          IF g_raster IS NULL THEN
+            SELECT raster INTO g_raster FROM zg_lst_vw;
+          END IF;
+          RETURN g_raster;
+        END lst_raster;
+
+        PROCEDURE load_pixels IS
+          c_rows_per_call CONSTANT PLS_INTEGER := 64;                   -- 64 rows x 1209 columns per getCellValues call
+          TYPE t_numbers IS TABLE OF NUMBER INDEX BY PLS_INTEGER;
+          l_raster SDO_GEORASTER    := lst_raster;
+          l_dims   SDO_NUMBER_ARRAY := SDO_GEOR.getSpatialDimSizes(l_raster);   -- rows, columns
+          l_ult    SDO_NUMBER_ARRAY := SDO_GEOR.getULTCoordinate(l_raster);     -- row and column of the upper-left cell
+          l_ext    SDO_GEOMETRY     := SDO_GEOR.generateSpatialExtent(l_raster); -- footprint, outer pixel edges
+          l_rows   PLS_INTEGER      := l_dims(1);
+          l_cols   PLS_INTEGER      := l_dims(2);
+          l_minx   NUMBER           := SDO_GEOM.SDO_MIN_MBR_ORDINATE(l_ext, 1);
+          l_maxy   NUMBER           := SDO_GEOM.SDO_MAX_MBR_ORDINATE(l_ext, 2);
+          l_dx     NUMBER           := (SDO_GEOM.SDO_MAX_MBR_ORDINATE(l_ext, 1) - l_minx) / l_cols;
+          l_dy     NUMBER           := (l_maxy - SDO_GEOM.SDO_MIN_MBR_ORDINATE(l_ext, 2)) / l_rows;
+          l_rownum SDO_NUMBER_ARRAY;
+          l_colnum SDO_NUMBER_ARRAY;
+          l_values SDO_NUMBER_ARRAY;
+          l_lon    t_numbers;
+          l_lat    t_numbers;
+          l_lst    t_numbers;
+          l_first  PLS_INTEGER;
+          l_last   PLS_INTEGER;
+          l_n      PLS_INTEGER;
+        BEGIN
+          EXECUTE IMMEDIATE 'TRUNCATE TABLE zg_lst_pixels DROP STORAGE';
+
+          FOR k IN 0 .. CEIL(l_rows / c_rows_per_call) - 1 LOOP
+            l_first := k * c_rows_per_call;
+            l_last  := LEAST(l_first + c_rows_per_call, l_rows) - 1;
+
+            -- cell coordinates of all cells in rows l_first .. l_last
+            l_rownum := SDO_NUMBER_ARRAY();
+            l_colnum := SDO_NUMBER_ARRAY();
+            l_rownum.EXTEND((l_last - l_first + 1) * l_cols);
+            l_colnum.EXTEND((l_last - l_first + 1) * l_cols);
+            l_n := 0;
+            FOR r IN l_first .. l_last LOOP
+              FOR c IN 0 .. l_cols - 1 LOOP
+                l_n := l_n + 1;
+                l_rownum(l_n) := l_ult(1) + r;
+                l_colnum(l_n) := l_ult(2) + c;
+              END LOOP;
+            END LOOP;
+
+            -- one call for all cells of the chunk (band 0)
+            l_values := SDO_GEOR.getCellValues(l_raster, 0, l_rownum, l_colnum, 0);
+
+            -- keep the valid pixels, with the lon/lat of the pixel centre
+            l_lon.DELETE;
+            l_lat.DELETE;
+            l_lst.DELETE;
+            l_n := 0;
+            FOR i IN 1 .. l_values.COUNT LOOP
+              IF l_values(i) IS NOT NULL AND l_values(i) <> c_nodata THEN
+                l_n := l_n + 1;
+                l_lon(l_n) := l_minx + (l_colnum(i) - l_ult(2) + 0.5) * l_dx;
+                l_lat(l_n) := l_maxy - (l_rownum(i) - l_ult(1) + 0.5) * l_dy;
+                l_lst(l_n) := ROUND(l_values(i), 2);
+              END IF;
+            END LOOP;
+
+            -- dynamic SQL, so the package compiles before ZG_LST_PIXELS exists
+            FORALL i IN 1 .. l_n
+              EXECUTE IMMEDIATE 'INSERT INTO zg_lst_pixels (lon, lat, lst_c) VALUES (:lon, :lat, :lst)'
+                USING l_lon(i), l_lat(i), l_lst(i);
+          END LOOP;
+
+          COMMIT;
+        END load_pixels;
+
+        FUNCTION value_at (p_point IN SDO_GEOMETRY) RETURN NUMBER IS
+          l_value NUMBER;
+        BEGIN
+          l_value := SDO_GEOR.getCellValue(lst_raster, 0, p_point, 1);   -- logical layer 1 = band 0
+          RETURN CASE WHEN l_value = c_nodata THEN NULL ELSE l_value END;
+        EXCEPTION
+          WHEN OTHERS THEN
+            RETURN NULL;                                                -- point outside the raster
+        END value_at;
+
+      END zg_lst;
+
+      /
+    languageId: oracle-sql
+  - kind: 1
+    value: >-
+      ## 8. H3 Cells Table
+
+
+      One row per H3 cell. Like the tables of demo 1, it has an `ID` identity
+      column and annotations, which Select AI can use later.
+    languageId: markdown
+  - kind: 2
+    value: >
+      CREATE TABLE IF NOT EXISTS zg_h3_cells (
+        id     INTEGER
+               GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1 CACHE 1000 MAXVALUE 9999999999)
+               CONSTRAINT zg_h3_cells_pk PRIMARY KEY
+               ANNOTATIONS (Description 'Surrogate key'),
+        h3_id  VARCHAR2(16)
+               NOT NULL
+               CONSTRAINT zg_h3_cells_uk UNIQUE
+               ANNOTATIONS (Description 'H3 cell at resolution 9, hex string of SDO_UTIL.H3_KEY'),
+        lst_c  NUMBER(5,2)
+               NOT NULL
+               ANNOTATIONS (Description 'Mean land surface temperature in degrees Celsius, Landsat 8, 2 August 2026, 09:39 UTC'),
+        pixels NUMBER(4)
+               NOT NULL
+               ANNOTATIONS (Description 'Number of valid 30 m pixels averaged in the cell, about 117 for a complete cell'),
+        geom   SDO_GEOMETRY
+               NOT NULL
+               ANNOTATIONS (Description 'H3 cell polygon, WGS84 lon/lat (SRID 4326)')
+      )
+
+      ANNOTATIONS (
+        Display 'Zagreb H3 cells',
+        Description 'H3 cells (resolution 9, about 0.1 km2) over the City of Zagreb with the land surface temperature of a heat-wave day'
+      );
+    languageId: oracle-sql
+  - kind: 1
+    value: >-
+      ## 9. Fill the Table
+
+
+      1. `ZG_LST.LOAD_PIXELS` turns the valid pixels of the raster into points
+      in `ZG_LST_PIXELS`, at the pixel centres in WGS84: 21 calls of
+      `SDO_GEOR.getCellValues` instead of one GeoRaster call per cell.
+
+      2. One `GROUP BY` on `SDO_UTIL.H3_KEY(lon, lat, 9)` gives the mean
+      temperature and the number of pixels of every cell.
+
+      3. A cell is kept if at least half of its about 117 pixels lie in the city
+      (the GeoTIFF is NODATA outside the city). Its polygon comes from
+      `SDO_UTIL.H3_BOUNDARY`.
+
+
+      The pixel count and temperature range must match the GeoTIFF: 711,436
+      pixels, 27.8 to 58.1 °C, mean 38.2 °C.
+    languageId: markdown
+  - kind: 2
+    value: >
+      --
+
+      -- Staging table: the valid pixels of the raster as points
+
+      --
+
+
+      CREATE TABLE IF NOT EXISTS zg_lst_pixels (
+        id     INTEGER
+               GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1 CACHE 1000 MAXVALUE 9999999999)
+               ANNOTATIONS (Description 'Surrogate key'),
+        lon    NUMBER
+               NOT NULL
+               ANNOTATIONS (Description 'Longitude of the pixel centre, WGS84'),
+        lat    NUMBER
+               NOT NULL
+               ANNOTATIONS (Description 'Latitude of the pixel centre, WGS84'),
+        lst_c  NUMBER(5,2)
+               NOT NULL
+               ANNOTATIONS (Description 'Land surface temperature in degrees Celsius')
+      )
+
+      ANNOTATIONS (
+        Description 'Valid 30 m pixels of the surface temperature GeoRaster as points, staging for the H3 aggregation'
+      );
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Read the raster in 21 calls and store the valid pixels (expected:
+      711,436 pixels, 27.8 to 58.1 °C, mean 38.2 °C)
+
+      --
+
+
+      BEGIN
+        zg_lst.load_pixels;
+      END;
+
+      /
+
+
+      SELECT
+        COUNT(*) AS pixels,
+        MIN(lst_c) AS min_c,
+        ROUND(AVG(lst_c), 1) AS mean_c,
+        MAX(lst_c) AS max_c
+      FROM
+        zg_lst_pixels;
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- H3 cells (resolution 9): mean surface temperature of the pixels in each
+      cell
+
+      --
+
+
+      INSERT INTO zg_h3_cells (h3_id, lst_c, pixels, geom)
+
+      SELECT
+        h3_id,
+        lst_c,
+        pixels,
+        SDO_UTIL.H3_BOUNDARY(HEXTORAW(h3_id)) AS geom
+      FROM (
+        SELECT
+          RAWTOHEX(SDO_UTIL.H3_KEY(lon, lat, 9)) AS h3_id,
+          ROUND(AVG(lst_c), 2) AS lst_c,
+          COUNT(*) AS pixels
+        FROM
+          zg_lst_pixels
+        GROUP BY
+          RAWTOHEX(SDO_UTIL.H3_KEY(lon, lat, 9))
+      )
+
+      WHERE
+        pixels >= 59;                                                   -- at least half of the about 117 pixels in the city
+
+      COMMIT;
+    languageId: oracle-sql
+  - kind: 1
+    value: >-
+      ## 10. Spatial Index and Statistics
+
+
+      The spatial index creates the spatial metadata automatically (26ai). It
+      speeds up maps and spatial joins, for example with the stops.
+    languageId: markdown
+  - kind: 2
+    value: >
+      CREATE INDEX IF NOT EXISTS zg_h3_cells_sidx ON zg_h3_cells (geom)
+        INDEXTYPE IS MDSYS.SPATIAL_INDEX_V2
+        PARAMETERS ('layer_gtype=POLYGON');
+
+      BEGIN
+        DBMS_STATS.GATHER_TABLE_STATS(ownname => USER, tabname => 'ZG_H3_CELLS');
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 1
+    value: >-
+      ## 11. Checks
+
+
+      Expected: about 6,000 cells covering about 640 km² (the City of Zagreb), a
+      mean close to the pixel mean of 38.2 °C, cool cells on Medvednica, in
+      Maksimir, at Jarun and along the Sava, and hot cells in the centre and in
+      Novi Zagreb.
+    languageId: markdown
+  - kind: 2
+    value: |
+      --
+      -- Number of cells, area and surface temperature range
+      --
+
+      SELECT
+        COUNT(*) AS cells,
+        ROUND(SUM(SDO_GEOM.SDO_AREA(geom, 0.05, 'unit=SQ_KM')), 1) AS area_km2,
+        MIN(lst_c) AS min_c,
+        ROUND(AVG(lst_c), 1) AS mean_c,
+        MAX(lst_c) AS max_c
+      FROM
+        zg_h3_cells;
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- The 10 hottest and the 10 coolest cells, with their centre for a quick
+      look on a map
+
+      --
+
+
+      SELECT *
+
+      FROM (
+        SELECT
+          CASE WHEN rn_hot <= 10 THEN 'hottest' ELSE 'coolest' END AS kind,
+          h3_id,
+          lst_c,
+          ROUND(c.center.sdo_point.x, 5) AS lon,
+          ROUND(c.center.sdo_point.y, 5) AS lat
+        FROM (
+          SELECT
+            h3_id,
+            lst_c,
+            SDO_UTIL.H3_CENTER(HEXTORAW(h3_id)) AS center,
+            ROW_NUMBER() OVER (ORDER BY lst_c DESC) AS rn_hot,
+            ROW_NUMBER() OVER (ORDER BY lst_c ASC) AS rn_cool
+          FROM
+            zg_h3_cells
+        ) c
+        WHERE rn_hot <= 10 OR rn_cool <= 10
+      )
+
+      ORDER BY lst_c DESC;
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- The tram 6 stops A-D from the hook: H3 cell of each stop via
+      SDO_UTIL.H3_KEY
+
+      --
+
+
+      SELECT
+        s.station_code,
+        s.station_name,
+        c.h3_id,
+        c.lst_c
+      FROM
+        tram_stations s
+        LEFT JOIN zg_h3_cells c ON c.h3_id = RAWTOHEX(SDO_UTIL.H3_KEY(s.geom, 9))
+      ORDER BY
+        s.station_code;
+    languageId: oracle-sql
+  - kind: 1
+    value: |-
+      ## 12. Use the Results in Spatial Studio
+
+      **`ZG_H3_CELLS` is a normal polygon dataset, not a Spatial Studio "H3 dataset".** Add it with *Create Dataset → Database table/view* and colour the hexagons by `LST_C`. It has a key (`ID`), spatial metadata and a spatial index (section 10).
+
+      **Spatial Studio's H3 functions work on point datasets.** *Prepare → Create H3 Index* (and *H3 Join* in Spatial Studio 25.2) aggregate the points of a dataset into hexagons, so the dialog only offers point geometry columns. `ZG_H3_CELLS` (polygons) and `ZG_LST_PIXELS` (LON and LAT as numbers, no geometry) have none. For a Spatial Studio H3 dataset:
+      1. The next cells create `ZG_LST_POINTS`: the 711,436 pixels as `SDO_GEOMETRY` points (SRID 4326) with a key and a spatial index.
+      2. In Spatial Studio, add `ZG_LST_POINTS` as a dataset, then *Prepare → Create H3 Index*, geometry column `GEOM`. The Spatial Studio guide lists *Count* and *Sum* as summary options; a mean temperature needs *Avg*, which the H3 Join dialog of 25.2 offers. Check which options your version shows.
+
+      **H3 summary table in the database.** `SDO_UTIL.H3SUM_CREATE_TABLE` builds the same kind of aggregation in SQL, for all resolutions at once: one row per hexagon and level (`LEVELNUM`, `KEY`), here with the mean, minimum, maximum and number of pixels. The database recognises it as an H3 summary table by its H3SUM index (`SDO_UTIL.H3SUM_LIST_TABLES`), and `SDO_UTIL.H3SUM_VECTORTILE` serves it as vector tiles, for example for the MapLibre map. On this instance, `SDO_UTIL.H3SUM_VECTORTILE` raises PLS-306 inside `MDSYS.SDO_UTIL` (`SPLIT_180_MERIDIAN`), with and without an explicit H3 level, so its test cell is commented out. `scripts/h3sum_vectortile_repro.sql` reproduces the error with three points. The vector tile of the resolution 9 cells comes from `SDO_UTIL.GET_VECTORTILE` on `ZG_H3_CELLS` (last cell). Whether Spatial Studio lists an H3 summary table created in SQL as an H3 dataset is not documented.
+
+      References:
+      * [Preparing an H3 aggregation dataset (Spatial Studio)](https://docs.oracle.com/en/database/oracle/spatial-studio/23.1/spstu/preparing-dataset-h3-aggregation.html)
+      * [Joining point datasets using H3 aggregations (Spatial Studio 25.2)](https://docs.oracle.com/en/database/oracle/spatial-studio/25.2/spstu/joining-point-datasets-using-h3-aggregations.html)
+      * [SDO_UTIL.H3SUM_CREATE_TABLE (26ai)](https://docs.oracle.com/en/database/oracle/oracle-database/26/spatl/sdo_util-h3sum_create_table.html)
+      * [SDO_UTIL.H3SUM_VECTORTILE (26ai)](https://docs.oracle.com/en/database/oracle/oracle-database/26/spatl/sdo_util-h3sum_vectortile.html)
+    languageId: markdown
+  - kind: 2
+    value: >
+      --
+
+      -- Point dataset for Spatial Studio: the valid pixels as SDO_GEOMETRY
+      points (WGS84), with key and spatial index
+
+      --
+
+
+      CREATE TABLE IF NOT EXISTS zg_lst_points (
+        id     INTEGER
+               GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1 CACHE 1000 MAXVALUE 9999999999)
+               CONSTRAINT zg_lst_points_pk PRIMARY KEY
+               ANNOTATIONS (Description 'Surrogate key'),
+        lst_c  NUMBER(5,2)
+               NOT NULL
+               ANNOTATIONS (Description 'Land surface temperature in degrees Celsius, Landsat 8, 2 August 2026, 09:39 UTC'),
+        geom   SDO_GEOMETRY
+               NOT NULL
+               ANNOTATIONS (Description 'Centre of the 30 m pixel, WGS84 lon/lat (SRID 4326)')
+      )
+
+      ANNOTATIONS (
+        Display 'Zagreb surface temperature points',
+        Description 'Valid 30 m pixels of the surface temperature raster as points, for H3 aggregation in Spatial Studio'
+      );
+
+
+      INSERT /*+ APPEND */ INTO zg_lst_points (lst_c, geom)
+
+      SELECT lst_c, SDO_GEOMETRY(lon, lat) FROM zg_lst_pixels;
+
+
+      COMMIT;
+
+
+      CREATE INDEX IF NOT EXISTS zg_lst_points_sidx ON zg_lst_points (geom)
+        INDEXTYPE IS MDSYS.SPATIAL_INDEX_V2
+        PARAMETERS ('layer_gtype=POINT cbtree_index=true');
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- H3 summary table for resolutions 0 to 10: mean, minimum, maximum and
+      number of pixels per hexagon
+
+      --
+
+      DROP TABLE IF EXISTS zg_lst_h3sum PURGE;
+
+
+      BEGIN
+        SDO_UTIL.H3SUM_CREATE_TABLE(
+          table_out    => 'ZG_LST_H3SUM',
+          table_in     => 'ZG_LST_PIXELS',
+          geomcol_spec => 'LON, LAT',
+          col_spec     => 'LST_C,AVG; LST_C,MIN; LST_C,MAX; LST_C,CNT',
+          max_H3_level => 10);
+      END;
+
+      /
+
+
+      SELECT * FROM SDO_UTIL.H3SUM_LIST_TABLES();
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Hexagons per level; at level 9 the summary table must agree with
+      ZG_H3_CELLS (same cells, same means)
+
+      --
+
+
+      SELECT
+        levelnum,
+        COUNT(*) AS hexagons,
+        SUM(lst_c_cnt) AS pixels,
+        ROUND(AVG(lst_c_avg), 1) AS mean_of_means_c
+      FROM
+        zg_lst_h3sum
+      GROUP BY
+        levelnum
+      ORDER BY
+        levelnum;
+
+      SELECT
+        COUNT(*) AS cells_in_both,
+        ROUND(MAX(ABS(s.lst_c_avg - c.lst_c)), 3) AS max_difference_c
+      FROM
+        zg_lst_h3sum s
+        JOIN zg_h3_cells c ON c.h3_id = RAWTOHEX(s.key)
+      WHERE
+        s.levelnum = 9;
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Vector tile from the H3 summary table: tile 14/8919/5841 (city centre
+      with stop A), H3 level 9.
+
+      -- Commented out: on this instance the call raises ORA-06553 PLS-306 in
+      SPLIT_180_MERIDIAN inside MDSYS.SDO_UTIL,
+
+      -- with and without levelnum (reproduction:
+      scripts/h3sum_vectortile_repro.sql). Uncomment to retest.
+
+      --
+
+
+      -- SELECT DBMS_LOB.GETLENGTH(
+
+      --          SDO_UTIL.H3SUM_VECTORTILE(
+
+      --            h3_table  => 'ZG_LST_H3SUM',
+
+      --            levelnum  => 9,
+
+      --            tile_x    => 8919,
+
+      --            tile_y    => 5841,
+
+      --            tile_zoom => 14)) AS tile_bytes
+
+      -- FROM dual;
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Alternative: vector tile of the resolution 9 cells straight from
+      ZG_H3_CELLS (as for the tram layers in demo 1)
+
+      --
+
+
+      SELECT DBMS_LOB.GETLENGTH(
+               SDO_UTIL.GET_VECTORTILE(
+                 TABLE_NAME    => 'ZG_H3_CELLS',
+                 GEOM_COL_NAME => 'GEOM',
+                 ATT_COL_NAMES => SDO_STRING_ARRAY('H3_ID', 'LST_C'),
+                 TILE_X        => 8919,
+                 TILE_Y        => 5841,
+                 TILE_ZOOM     => 14,
+                 LAYER_NAME    => 'zg_h3_cells')) AS tile_bytes
+      FROM dual;
+    languageId: oracle-sql
+  - kind: 1
+    value: >-
+      # Preparation End
+
+
+      `ZG_H3_CELLS` is ready for `demo2_sai_lisa_hotspot_clustering.dsnb`.
+
+
+      Next steps:
+
+      * `ZET_STOPS`: all ZET stops from `stops.txt` of the ZET GTFS schedule.
+
+      * For the GWR and SLX notebooks: canopy %, impervious %, NDVI and building
+      height per H3 cell.
+    languageId: markdown

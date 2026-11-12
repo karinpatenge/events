@@ -1,0 +1,55 @@
+file alta.css (
+    mimeType: text/css
+    charSet: utf-8
+)
+
+file alta.min.css (
+    mimeType: text/css
+    charSet: utf-8
+)
+
+file bundle.css (
+    mimeType: text/css
+    charSet: utf-8
+)
+
+file index.js (
+    mimeType: text/javascript
+    charSet: utf-8
+)
+
+file lodash.min.js (
+    mimeType: text/javascript
+    charSet: utf-8
+)
+
+file ojuxIconFont_Rg.woff (
+    mimeType: font/woff
+    charSet: utf-8
+)
+
+file ojuxIconFont_Rg.woff2 (
+    mimeType: font/woff2
+    charSet: utf-8
+)
+
+file wrapper.css (
+    mimeType: text/css
+    charSet: utf-8
+)
+
+file wrapper.js (
+    mimeType: text/javascript
+    charSet: utf-8
+)
+
+file wrapper.min.css (
+    mimeType: text/css
+    charSet: utf-8
+)
+
+file wrapper.min.js (
+    mimeType: text/javascript
+    charSet: utf-8
+)
+

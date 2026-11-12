@@ -1,0 +1,2332 @@
+cells:
+  - kind: 1
+    value: >-
+      # Demo 1: Streaming ZET Vehicle Positions as Vector Tiles
+
+
+      **HrOUG 2026 · Spatial Meets AI**
+
+
+      Environment: Oracle Autonomous AI Database 26ai
+
+
+      This notebook takes the live **ZET GTFS-Realtime** feed of Zagreb's trams
+      and buses into the database, indexes the positions in **space and time**
+      with the enhanced CBTREE spatial index, and streams them as **Mapbox
+      Vector Tiles** through ORDS to a web map.
+
+
+      **Task:** Find the anwer to question ***"Which ZET stops need shade
+      first?"***.
+    languageId: markdown
+  - kind: 1
+    value: |-
+      ## Table of Contents
+
+      1. Data Sources
+      2. Ingestion Design
+      3. Session Setup
+      4. Clean Up
+      5. Landing and Position Tables
+      6. Ingest Procedure
+      7. Test with Real and Reconstructed Feed Data
+      8. Spatio-temporal CBTREE Index
+      9. Spatio-temporal Queries
+      10. Vector Tiles
+      11. REST Endpoints with ORDS
+      12. Retention
+      13. Loader Job in the Database
+      14. Map with MapLibre
+      15. Demo End
+    languageId: markdown
+  - kind: 1
+    value: |-
+      ## 1. Data Sources
+
+      ### ZET GTFS-Realtime (live vehicle positions)
+
+      | Property | Value |
+      |---|---|
+      | Provider | ZET – Zagrebački električni tramvaj |
+      | Endpoint | [https://zet.hr/gtfs-rt-protobuf](https://zet.hr/gtfs-rt-protobuf) |
+      | Format | GTFS Realtime `FeedMessage`, Protocol Buffers, `FULL_DATASET` |
+      | Content | Trip updates and vehicle positions in one feed |
+      | Refresh | About every 10–15 seconds (as polled by third-party apps) |
+      | Terms | To be confirmed with ZET. Attribute ZET as the source. |
+
+      **What the feed actually contains** (checked on 2026-10-08 at 11:47 UTC):
+      * 945 entities: 587 trip updates and 358 vehicle positions, 13 of them on tram line 6.
+      * Filled fields: entity id, vehicle id, trip id, route id, start date, latitude, longitude, timestamp.
+      * Not filled: bearing, speed, stop id, vehicle label, current status.
+
+      A third-party app listing describes the feed as marked *test-only* by ZET, and it can lag or lapse.
+
+      Further reading:
+      * Transitland feed record: [ZET GTFS-RT](https://www.transit.land/feeds/f-u25k-zagreba%C4%8Dkielektri%C4%8Dnitramvaj~rt)
+      * [GTFS Realtime reference](https://gtfs.org/documentation/realtime/reference/)
+      * [Protocol Buffers JSON mapping](https://protobuf.dev/programming-guides/json/): the loader sends this JSON form of the feed to the database.
+    languageId: markdown
+  - kind: 1
+    value: |-
+      ### ZET GTFS Static (schedule)
+
+      | Property | Value |
+      |---|---|
+      | Endpoint | [https://zet.hr/gtfs-scheduled/latest](https://zet.hr/gtfs-scheduled/latest) |
+      | Format | GTFS Schedule (ZIP of CSV files) |
+      | Licence | Derived products allowed, attribution required (per [Transitland](https://www.transit.land/feeds/f-u25k-zagreba%C4%8Dkielektri%C4%8Dnitramvaj)) |
+      | Role | Route types (tram vs. bus), stop ids, shapes. Loaded in a later step. |
+
+      ### OpenStreetMap: Tram Line 6 (already loaded)
+
+      Loaded by the scripts in this folder:
+      * `create_table_tram_lines.sql` and `insert_tram_lines.sql` → `TRAM_LINES`: tram 6 track, one row per direction
+      * `create_table_tram_stations.sql` and `insert_tram_stations.sql` → `TRAM_STATIONS`: stops A–D
+
+      Available as GeoJSON via Spatial Studio:
+      * [Tram Lines](https://ij1tyzir3wpwlpe-kpadw23ai.adb.eu-frankfurt-1.oraclecloudapps.com/spatialstudio/api/v1/jsonstream/dd88bf69c61da3c4eb3706808d0907ec)
+      * [Tram Stations](https://ij1tyzir3wpwlpe-kpadw23ai.adb.eu-frankfurt-1.oraclecloudapps.com/spatialstudio/api/v1/jsonstream/83eea2e3fd1ffeac64189dd3fdf2c750)
+
+      Source relations: [147093 (Črnomerec → Sopot)](https://www.openstreetmap.org/relation/147093) and [2183640 (Sopot → Črnomerec)](https://www.openstreetmap.org/relation/2183640). © OpenStreetMap contributors, [ODbL](https://www.openstreetmap.org/copyright).
+    languageId: markdown
+  - kind: 2
+    value: |
+      --
+      -- Check the prerequisites: tram 6 tables from the OSM scripts
+      --
+
+      SELECT
+        table_name,
+        num_rows
+      FROM
+        user_tables
+      WHERE
+        table_name IN ('TRAM_STATIONS', 'TRAM_LINES')
+      ORDER BY
+        table_name;
+    languageId: oracle-sql
+  - kind: 1
+    value: |-
+      ## 2. Ingestion Design
+
+      ```
+      ZET GTFS-RT feed (protobuf)                   loader outside the database (optional)
+        │ ZET_FEED_JOB, every 15 s: ZET_FEED.POLL   │ ORDS POST /zet-ingest/positions (OAuth)
+        │ UTL_HTTP + protobuf decoding in PL/SQL    │
+        ▼                                           │
+      ZET_STREAM.INGEST ◄───────────────────────────┘
+        ├─► ZET_FEED_RAW            raw JSON per feed message: replay, reprocessing
+        └─► ZET_VEHICLE_POSITIONS   SDO_GEOMETRY + UTC timestamp, CBTREE index FILTER BY observed_at
+              ▲   │
+              │   ├─► spatio-temporal SQL queries
+              │   └─► SDO_UTIL.GET_VECTORTILE ─► ORDS GET /zet/vt/{layer}/{z}/{x}/{y} ─► MapLibre page
+              │                                  (alternatives: APEX Map Region, Spatial Studio)
+              └── INSERT /*+ APPEND */ ◄── DBMS_CLOUD external table ◄── July 2026 CSV.gz in Object Storage
+
+      ZET_PURGE_JOB, hourly: deletes rows older than 24 hours from both tables
+      ```
+
+      Design choices, following the Oracle Database guidance for streamed data:
+      * **The database pulls the feed.** The scheduler job `ZET_FEED_JOB` polls the feed every 15 seconds (section 13): `UTL_HTTP` over HTTPS, protobuf decoded in PL/SQL. No external machine or script is needed, only a network ACL for `zet.hr`. A loader outside the database can still POST to the ORDS endpoint (section 11).
+      * **Set-based ingest.** One `MERGE` per feed message over `JSON_TABLE`, not row by row. This has the same effect as array DML (`FORALL`, `executemany`).
+      * **Raw landing table.** Every new feed message is kept as JSON. That enables replay for the live demo and reprocessing later.
+      * **Idempotent.** A feed message with a header timestamp that is already stored is skipped. The primary key `(vehicle_id, observed_at)` plus `MERGE ... WHEN NOT MATCHED` skips positions that repeat between messages.
+      * **Bulk load for history.** The reconstructed July 2026 data (1.1 million positions) goes in with one direct-path `INSERT ... SELECT` from a `DBMS_CLOUD` external table, followed by fresh statistics (section 7.2).
+      * **UTC everywhere.** GTFS-RT timestamps are POSIX seconds in UTC. Convert to `Europe/Zagreb` only in queries.
+      * **Hourly partitions.** Both tables are interval-partitioned by hour on a virtual `DATE` copy of their timestamp, starting at 1970-01-01 (section 5).
+      * **Surrogate keys.** Each table has an `ID` identity column with `CACHE 1000`; in `ZET_FEED_RAW` it is the primary key.
+      * **Spatio-temporal index.** CBTREE with `FILTER BY observed_at` (Release Update 23.26.3): one index search covers place and time.
+      * **Data Lakehouse workload.** `NOCOMPRESS` for the high-frequency DML tables, because the default is Hybrid Columnar Compression. Autonomous AI Database ignores logging, LOB storage and physical attribute clauses, so they are left out. Optimizer hints are ignored by default (see the session setup below).
+      * **Retention.** The hourly job `ZET_PURGE_JOB` deletes rows older than 24 hours (section 12). It deletes the July data too, so disable it while you work with July. Dropping hourly partitions would be faster, but needs a `LOCAL` CBTREE index with `FILTER BY`, which is still to be verified.
+      * **Serving.** Vector tiles come straight from the tables with `SDO_UTIL.GET_VECTORTILE` through ORDS (section 11) and show on a MapLibre page (section 14). APEX Map Regions (vector tile layers from APEX 26.1) and Spatial Studio are low-code and no-code alternatives.
+      * **Operations.** Both jobs have a cell to monitor their runs and a commented-out cell to disable them. Section 4 removes every object of the notebook, so it can run again from a clean state.
+      * **Security.** The network ACL opens only `zet.hr` on port 443. The ingest endpoint is protected by an ORDS privilege and an OAuth client; the tile endpoints are public and read-only.
+      * **More consumers.** If several applications need the stream, add Transactional Event Queues.
+
+      References:
+      * [Creating a spatial index (CBTREE, FILTER BY)](https://docs.oracle.com/en/database/oracle/oracle-database/26/spatl/creating-spatial-index.html)
+      * [High-performance spatiotemporal analysis in Oracle AI Database](https://blogs.oracle.com/database/high-performance-spatiotemporal-analysis-in-oracle-ai-database)
+      * [New Spatial features in Oracle AI Database 26ai](https://docs.oracle.com/en/database/oracle/oracle-database/26/spatl/changes-this-release-oracle-spatial-developers-guide.html)
+      * [Autonomous AI Database: call web services](https://docs.oracle.com/en/cloud/paas/autonomous-database/serverless/adbsb/call-web-services.html)
+    languageId: markdown
+  - kind: 2
+    value: >
+      --
+
+      -- Database version: the spatio-temporal CBTREE index needs Release Update
+      23.26.3 or later
+
+      --
+
+
+      SELECT version_full FROM product_component_version;
+    languageId: oracle-sql
+  - kind: 1
+    value: >-
+      ## 3. Session Setup
+
+
+      The Data Lakehouse workload ignores optimizer hints by default. Enable
+      them for this session so `DOMAIN_INDEX_FILTER` takes effect.
+    languageId: markdown
+  - kind: 2
+    value: |
+      --
+      -- Disable ignoring of hints (needed in ADB)
+      --
+
+      ALTER SESSION SET OPTIMIZER_IGNORE_HINTS=FALSE;
+      ALTER SESSION SET OPTIMIZER_IGNORE_PARALLEL_HINTS=FALSE;
+    languageId: oracle-sql
+  - kind: 2
+    value: |
+      SET TIMING ON
+      SET SERVEROUTPUT ON
+    languageId: oracle-sql
+  - kind: 1
+    value: >-
+      ## 4. Clean Up
+
+
+      This section removes every database object the notebook creates, so the
+      notebook can run again from a clean state. Run it before section 5. Each
+      step skips objects that don't exist yet, so it also works on the first
+      run.
+
+
+      | Object | Type | Created in section |
+
+      |---|---|---|
+
+      | `ZET_PURGE_JOB`, `ZET_FEED_JOB` | Scheduler jobs | 12, 13 |
+
+      | `zet-gtfsrt-loader` | ORDS OAuth client | 11 |
+
+      | `zet.ingest.write` | ORDS privilege | 11 |
+
+      | `zet.ingest`, `zet.tiles` | ORDS modules | 11 |
+
+      | `ZET_FEED`, `ZET_TILES`, `ZET_STREAM` | Packages | 13, 10, 6 |
+
+      | `ZET_TRAM_POSITIONS_JULY_EXT` | External table | 7.2 |
+
+      | `ZET_VEHICLE_POSITIONS` (with index `ZET_VEHICLE_POSITIONS_STIDX`),
+      `ZET_FEED_RAW` | Tables | 5, 8 |
+
+      | Spatial metadata of `ZET_VEHICLE_POSITIONS` | Row in
+      `USER_SDO_GEOM_METADATA` | 8 (automatic) |
+
+
+      **Kept:**
+
+      * `TRAM_LINES` and `TRAM_STATIONS`: prerequisites from the OSM scripts
+
+      * the REST-enabled schema
+
+      * the network ACL for `zet.hr` (granted by ADMIN, section 13)
+
+
+      **The OAuth client is removed too.** The next run of section 11 issues a
+      new client id and secret; update `.credentials` then.
+    languageId: markdown
+  - kind: 2
+    value: >
+      --
+
+      -- Clean up 1/3: scheduler jobs and ORDS objects
+
+      -- Dynamic calls, so each step is skipped if the object (or the API) does
+      not exist
+
+      --
+
+
+      DECLARE
+        PROCEDURE step (p_name IN VARCHAR2, p_block IN VARCHAR2) IS
+        BEGIN
+          EXECUTE IMMEDIATE p_block;
+          DBMS_OUTPUT.PUT_LINE('removed: ' || p_name);
+        EXCEPTION
+          WHEN OTHERS THEN
+            DBMS_OUTPUT.PUT_LINE('skipped: ' || p_name || ' (' || SQLERRM || ')');
+        END step;
+      BEGIN
+        step('scheduler job ZET_FEED_JOB',     q'[BEGIN DBMS_SCHEDULER.DROP_JOB(job_name => 'ZET_FEED_JOB', force => TRUE); END;]');
+        step('scheduler job ZET_PURGE_JOB',    q'[BEGIN DBMS_SCHEDULER.DROP_JOB(job_name => 'ZET_PURGE_JOB', force => TRUE); END;]');
+        step('ORDS client zet-gtfsrt-loader',  q'[BEGIN ORDS_SECURITY.DELETE_CLIENT(p_name => 'zet-gtfsrt-loader'); END;]');
+        step('ORDS privilege zet.ingest.write', q'[BEGIN ORDS.DELETE_PRIVILEGE(p_name => 'zet.ingest.write'); END;]');
+        step('ORDS module zet.ingest',         q'[BEGIN ORDS.DELETE_MODULE(p_module_name => 'zet.ingest'); END;]');
+        step('ORDS module zet.tiles',          q'[BEGIN ORDS.DELETE_MODULE(p_module_name => 'zet.tiles'); END;]');
+        COMMIT;
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Clean up 2/3: packages, tables (the spatial index is dropped with its
+      table) and spatial metadata
+
+      --
+
+
+      DROP PACKAGE IF EXISTS zet_feed;
+
+      DROP PACKAGE IF EXISTS zet_tiles;
+
+      DROP PACKAGE IF EXISTS zet_stream;
+
+      DROP TABLE IF EXISTS zet_tram_positions_july_ext PURGE;
+
+      DROP TABLE IF EXISTS zet_vehicle_positions PURGE;
+
+      DROP TABLE IF EXISTS zet_feed_raw PURGE;
+
+
+      DELETE FROM user_sdo_geom_metadata WHERE table_name LIKE 'ZET_%';
+
+      COMMIT;
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Clean up 3/3: check that nothing is left (both queries return no rows)
+
+      --
+
+
+      SELECT object_type, object_name
+
+      FROM user_objects
+
+      WHERE object_name IN ('ZET_FEED', 'ZET_TILES', 'ZET_STREAM',
+      'ZET_VEHICLE_POSITIONS', 'ZET_FEED_RAW',
+                            'ZET_TRAM_POSITIONS_JULY_EXT', 'ZET_VEHICLE_POSITIONS_STIDX', 'ZET_PURGE_JOB', 'ZET_FEED_JOB')
+      ORDER BY object_type, object_name;
+
+
+      SELECT name, uri_prefix
+
+      FROM user_ords_modules
+
+      WHERE name LIKE 'zet.%';
+    languageId: oracle-sql
+  - kind: 1
+    value: |-
+      ## 5. Landing and Position Tables
+
+      * `ZET_FEED_RAW` keeps every received feed message as native JSON.
+      * `ZET_VEHICLE_POSITIONS` holds one row per vehicle and timestamp, with the position as `SDO_GEOMETRY` (WGS84, SRID 4326).
+
+      Both use 26ai features: `IF NOT EXISTS`, annotations (usable by Select AI later) and `DEFAULT ON NULL`.
+
+      **Built for streaming large data volumes.** Based on the Oracle AI Database skills and the 26ai documentation, for Autonomous AI Database Serverless with the Data Lakehouse workload:
+
+      | Choice | Why |
+      |---|---|
+      | Hourly interval partitions on a virtual `DATE` column (`received_date`, `observed_date`), starting at 1970-01-01 00:00 UTC | A new partition appears automatically for each hour that receives data, a whole hour can be removed at once, and bulk loads write direct-path into their own partitions. The start is the epoch of the GTFS-RT timestamps (POSIX seconds since 1970-01-01). The key is a `DATE` copy of the `TIMESTAMP`, because the 26ai Spatial documentation supports interval partitioning with `SPATIAL_INDEX_V2` only for a `NUMBER` or `DATE` key. Both tables use the same pattern. A table can have at most 1,048,575 partitions, so hourly partitions counted from 1970 last until about 2089. |
+      | Global primary keys | The streaming `MERGE` checks each new position with one index probe instead of one probe per partition. |
+      | `NOCOMPRESS` | The Data Lakehouse workload compresses tables with Hybrid Columnar Compression by default. That suits bulk loads, not a continuous stream of small inserts. Closed hours can be compressed later. |
+      | `NOCACHE` | Large tables read with full scans shouldn't push frequently used blocks out of the buffer cache. This is the default; it's stated explicitly here. |
+      | `ID` identity column in each table: `INTEGER GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1 CACHE 1000 MAXVALUE 9999999999)` | A surrogate key generated by the database. In `ZET_FEED_RAW` it is the primary key, and `ZET_VEHICLE_POSITIONS.FEED_ID` refers to it. In `ZET_VEHICLE_POSITIONS` the primary key stays `(vehicle_id, observed_at)`, because the `MERGE` needs it; `ID` gets no index, so it adds no index maintenance to the stream. The 26ai SQL reference recommends an identity cache above the default of 20, and the database skills recommend 1000 or more for high-volume inserts. `MAXVALUE 9999999999` allows 10 billion rows, about 16 years at 1.7 million positions a day. |
+
+      **Left out on purpose:**
+      * **`LOGGING` / `NOLOGGING`:** Autonomous AI Database ignores the logging clause; every change is logged for backup and recovery. On other databases, `NOLOGGING` only speeds up direct-path loads and leaves the data unrecoverable until the next backup.
+      * **LOB `CACHE` / `NOCACHE`:** the 26ai JSON guide recommends `CACHE` for JSON stored in LOBs. Autonomous AI Database ignores LOB storage parameters other than compression, and `payload` uses the native JSON type.
+      * **`PCTFREE`, `INITRANS`:** Autonomous AI Database ignores physical properties.
+      * **Fast ingest (`MEMOPTIMIZE FOR WRITE`):** not possible for `ZET_VEHICLE_POSITIONS`, because fast ingest doesn't allow a domain index such as the CBTREE spatial index (ORA-62191).
+
+      **Retention.** `ZET_STREAM.PURGE` (section 6) deletes rows, which also works on partitioned tables. Dropping whole partitions is much faster for large volumes. For `ZET_VEHICLE_POSITIONS`, that needs a `LOCAL` spatial index, and whether a CBTREE index can be created `LOCAL` is still to be verified.
+
+      References:
+      * [Autonomous AI Database: SQL commands (ignored clauses)](https://docs.oracle.com/en-us/iaas/autonomous-database-serverless/doc/autonomous-sql-commands.html)
+      * [Lakehouse workload (default compression)](https://docs.oracle.com/en/cloud/paas/autonomous-database/serverless/adbsb/appendix-autonomous-database-data-warehouse-workload.html)
+      * [Creating a spatial index (26ai: partitioning, CBTREE)](https://docs.oracle.com/en/database/oracle/oracle-database/26/spatl/creating-spatial-index.html)
+      * [CREATE TABLE (26ai: identity CACHE)](https://docs.oracle.com/en/database/oracle/oracle-database/26/sqlrf/CREATE-TABLE.html)
+      * [LOB storage for JSON data (26ai)](https://docs.oracle.com/en/database/oracle/oracle-database/26/adjsn/considerations-when-using-lob-storage-json-data.html)
+      * [ORA-62191](https://docs.oracle.com/en/error-help/db/ora-62191)
+    languageId: markdown
+  - kind: 2
+    value: >
+      --
+
+      -- Landing table: one row per feed message (GTFS-RT FeedMessage as JSON)
+
+      -- Streaming design: hourly interval partitions, uncompressed, NOCACHE,
+      cached identity
+
+      --
+
+
+      CREATE TABLE IF NOT EXISTS zet_feed_raw (
+        id           INTEGER
+                     GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1 CACHE 1000 MAXVALUE 9999999999)
+                     CONSTRAINT zet_feed_raw_pk PRIMARY KEY
+                     ANNOTATIONS (Description 'Surrogate key, one row per received feed message'),
+        feed_ts      TIMESTAMP
+                     NOT NULL
+                     ANNOTATIONS (Description 'GTFS-RT header timestamp (UTC)'),
+        received_at  TIMESTAMP
+                     DEFAULT ON NULL SYS_EXTRACT_UTC(SYSTIMESTAMP)
+                     NOT NULL
+                     ANNOTATIONS (Description 'Time the message reached the database (UTC)'),
+        received_date DATE
+                     GENERATED ALWAYS AS (CAST(received_at AS DATE)) VIRTUAL,  -- partitioning key (UTC)
+        payload      JSON
+                     NOT NULL
+                     ANNOTATIONS (Description 'GTFS-RT FeedMessage in the Protocol Buffers JSON mapping')
+      )
+
+      NOCOMPRESS
+
+      PARTITION BY RANGE (received_date) INTERVAL (NUMTODSINTERVAL(1, 'HOUR'))
+
+      (
+        PARTITION p_epoch VALUES LESS THAN (DATE '1970-01-01')   -- transition point 1970-01-01 00:00 UTC; hourly partitions follow
+      )
+
+      NOCACHE
+
+      ANNOTATIONS (
+        Display 'ZET feed messages',
+        Description 'Raw ZET GTFS-Realtime feed messages, kept for replay and reprocessing, one partition per UTC hour'
+      );
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Vehicle positions: one row per vehicle and position timestamp
+
+      -- Streaming design: hourly interval partitions, global primary key,
+      uncompressed, NOCACHE
+
+      --
+
+
+      CREATE TABLE IF NOT EXISTS zet_vehicle_positions (
+        id           INTEGER
+                     GENERATED ALWAYS AS IDENTITY (START WITH 1 INCREMENT BY 1 CACHE 1000 MAXVALUE 9999999999)
+                     ANNOTATIONS (Description 'Surrogate key, one row per stored position'),
+        vehicle_id   VARCHAR2(20)
+                     NOT NULL
+                     ANNOTATIONS (Description 'ZET vehicle id (GTFS-RT vehicle.vehicle.id)'),
+        observed_at  TIMESTAMP
+                     NOT NULL
+                     ANNOTATIONS (Description 'Position timestamp in UTC (GTFS-RT vehicle.timestamp)'),
+        observed_date DATE
+                     GENERATED ALWAYS AS (CAST(observed_at AS DATE)) VIRTUAL,  -- partitioning key (UTC)
+        route_id     VARCHAR2(10)
+                     ANNOTATIONS (Description 'ZET line number, for example 6 for tram 6'),
+        trip_id      VARCHAR2(64)
+                     ANNOTATIONS (Description 'GTFS trip id, joins to the ZET GTFS schedule'),
+        start_date   DATE
+                     ANNOTATIONS (Description 'Service date of the trip'),
+        feed_id      NUMBER
+                     ANNOTATIONS (Description 'Feed message the position came from (ZET_FEED_RAW.ID)'),
+        geom         SDO_GEOMETRY
+                     NOT NULL
+                     ANNOTATIONS (Description 'Vehicle position, WGS84 lon/lat (SRID 4326)'),
+        CONSTRAINT zet_vehicle_positions_pk PRIMARY KEY (vehicle_id, observed_at)    -- global index: one probe per MERGE row
+      )
+
+      NOCOMPRESS
+
+      PARTITION BY RANGE (observed_date) INTERVAL (NUMTODSINTERVAL(1, 'HOUR'))
+
+      (
+        PARTITION p_epoch VALUES LESS THAN (DATE '1970-01-01')   -- transition point 1970-01-01 00:00 UTC; hourly partitions follow
+      )
+
+      NOCACHE
+
+      ANNOTATIONS (
+        Display 'ZET vehicle positions',
+        Description 'Positions of ZET trams and buses from the GTFS-Realtime feed, Zagreb, one partition per UTC hour'
+      );
+    languageId: oracle-sql
+  - kind: 1
+    value: >-
+      ## 6. Ingest Procedure
+
+
+      `ZET_STREAM.INGEST` takes one feed message as JSON text (the loader or the
+      ORDS endpoint passes it through unchanged) and runs two steps:
+
+      1. It stores the message in `ZET_FEED_RAW`.
+
+      2. It extracts the vehicle positions with `JSON_TABLE`, building each
+      point with the 26ai constructor `SDO_GEOMETRY(lon, lat)`, and merges them
+      in one statement.
+
+
+      Trip update entities have no `vehicle.position`; the JSON path filter
+      skips them.
+    languageId: markdown
+  - kind: 2
+    value: >
+      CREATE OR REPLACE PACKAGE zet_stream AS
+
+        -- Ingest one GTFS-RT feed message (JSON). Returns the feed id and the number of new positions.
+        PROCEDURE ingest (
+          p_payload IN  CLOB,
+          p_feed_id OUT NUMBER,
+          p_rows    OUT NUMBER
+        );
+
+        -- Delete positions and raw messages older than p_keep_hours
+        PROCEDURE purge (
+          p_keep_hours IN NUMBER DEFAULT 24
+        );
+
+      END zet_stream;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      CREATE OR REPLACE PACKAGE BODY zet_stream AS
+
+        PROCEDURE ingest (
+          p_payload IN  CLOB,
+          p_feed_id OUT NUMBER,
+          p_rows    OUT NUMBER
+        ) IS
+        BEGIN
+          -- 1. Land the raw feed message
+          INSERT INTO zet_feed_raw (feed_ts, payload)
+          VALUES (
+            TIMESTAMP '1970-01-01 00:00:00'
+              + NUMTODSINTERVAL(TO_NUMBER(JSON_VALUE(p_payload, '$.header.timestamp')), 'SECOND'),
+            JSON(p_payload)
+          )
+          RETURNING id INTO p_feed_id;
+
+          -- 2. Extract the vehicle positions set-based and skip positions that are already stored
+          MERGE INTO zet_vehicle_positions t
+          USING (
+            SELECT
+              j.vehicle_id,
+              TIMESTAMP '1970-01-01 00:00:00' + NUMTODSINTERVAL(TO_NUMBER(j.epoch), 'SECOND') AS observed_at,
+              j.route_id,
+              j.trip_id,
+              TO_DATE(j.start_date, 'YYYYMMDD') AS start_date,
+              SDO_GEOMETRY(j.lon, j.lat) AS geom                     -- 26ai lon/lat constructor (2001, 4326)
+            FROM
+              zet_feed_raw r,
+              JSON_TABLE(
+                r.payload, '$.entity[*]?(exists(@.vehicle.position))'
+                COLUMNS (
+                  vehicle_id VARCHAR2(20) PATH '$.vehicle.vehicle.id',
+                  epoch      VARCHAR2(20) PATH '$.vehicle.timestamp',
+                  route_id   VARCHAR2(10) PATH '$.vehicle.trip.routeId',
+                  trip_id    VARCHAR2(64) PATH '$.vehicle.trip.tripId',
+                  start_date VARCHAR2(8)  PATH '$.vehicle.trip.startDate',
+                  lat        NUMBER       PATH '$.vehicle.position.latitude',
+                  lon        NUMBER       PATH '$.vehicle.position.longitude'
+                )
+              ) j
+            WHERE
+              r.id = p_feed_id
+              AND j.vehicle_id IS NOT NULL
+              AND j.epoch IS NOT NULL
+              AND j.lat IS NOT NULL
+              AND j.lon IS NOT NULL
+              AND NOT (j.lat = 0 AND j.lon = 0)
+          ) s
+          ON (t.vehicle_id = s.vehicle_id AND t.observed_at = s.observed_at)
+          WHEN NOT MATCHED THEN
+            INSERT (vehicle_id, observed_at, route_id, trip_id, start_date, feed_id, geom)
+            VALUES (s.vehicle_id, s.observed_at, s.route_id, s.trip_id, s.start_date, p_feed_id, s.geom);
+
+          p_rows := SQL%ROWCOUNT;
+        END ingest;
+
+        PROCEDURE purge (
+          p_keep_hours IN NUMBER DEFAULT 24
+        ) IS
+          l_limit TIMESTAMP := SYS_EXTRACT_UTC(SYSTIMESTAMP) - NUMTODSINTERVAL(p_keep_hours, 'HOUR');
+        BEGIN
+          DELETE FROM zet_vehicle_positions WHERE observed_at < l_limit;
+          DELETE FROM zet_feed_raw WHERE received_at < l_limit;
+        END purge;
+
+      END zet_stream;
+
+      /
+    languageId: oracle-sql
+  - kind: 1
+    value: >-
+      ## 7. Test with Real and Reconstructed Feed Data
+
+
+      Section 7 loads two data sets, both before the index is created in section
+      8:
+
+      * **7.1 One real feed message** tests the ingest path end to end.
+
+      * **7.2 Three hot days in July 2026** adds about 1.1 million tram
+      positions for the analysis and the map.
+
+
+      ### 7.1 One Real Feed Message
+
+
+      The sample below holds the **13 tram 6 vehicles** from the ZET feed of
+      2026-10-08, 11:47 UTC, plus one trip update entity that the ingest has to
+      skip. It uses the same JSON form the loader sends.
+
+
+      Run the cell twice. The second run reports **0 new positions**, which
+      shows that the ingest is idempotent.
+    languageId: markdown
+  - kind: 2
+    value: >
+      --
+
+      -- Ingest one real feed sample (tram 6, 2026-10-08 11:47 UTC)
+
+      --
+
+
+      DECLARE
+        l_feed_id NUMBER;
+        l_rows    NUMBER;
+      BEGIN
+        zet_stream.ingest(
+          p_payload => q'~
+      {
+        "header":{"gtfsRealtimeVersion":"1.0","incrementality":"FULL_DATASET","timestamp":"1791460060"},
+        "entity":[
+          {"id":"XQE3KMT01E","tripUpdate":{"trip":{"tripId":"0_30_1116_11_11542","routeId":"11"}}},
+          {"id":"XOE3KMT02M_102205","vehicle":{"trip":{"tripId":"0_30_608_6_11873","startDate":"20261008","routeId":"6"},"position":{"latitude":45.792652,"longitude":16.001947},"timestamp":"1791460059","vehicle":{"id":"102205"}}},
+          {"id":"XNE3KMT0CT_102263","vehicle":{"trip":{"tripId":"0_30_601_6_11876","startDate":"20261008","routeId":"6"},"position":{"latitude":45.809143,"longitude":15.977969},"timestamp":"1791460055","vehicle":{"id":"102263"}}},
+          {"id":"XOE3KMT00V_102255","vehicle":{"trip":{"tripId":"0_30_605_6_11960","startDate":"20261008","routeId":"6"},"position":{"latitude":45.777744,"longitude":15.98805},"timestamp":"1791460059","vehicle":{"id":"102255"}}},
+          {"id":"XNE3KMT0E2_102215","vehicle":{"trip":{"tripId":"0_30_603_6_11926","startDate":"20261008","routeId":"6"},"position":{"latitude":45.802128,"longitude":15.994857},"timestamp":"1791460060","vehicle":{"id":"102215"}}},
+          {"id":"XOE3KMT032_102225","vehicle":{"trip":{"tripId":"0_30_609_6_11901","startDate":"20261008","routeId":"6"},"position":{"latitude":45.803661,"longitude":15.993952},"timestamp":"1791460048","vehicle":{"id":"102225"}}},
+          {"id":"XOE3KMT006_102289","vehicle":{"trip":{"tripId":"0_30_604_6_11992","startDate":"20261008","routeId":"6"},"position":{"latitude":45.82214,"longitude":16.036694},"timestamp":"1791460051","vehicle":{"id":"102289"}}},
+          {"id":"XOE3KMT07C_102221","vehicle":{"trip":{"tripId":"0_30_616_6_11850","startDate":"20261008","routeId":"6"},"position":{"latitude":45.813095,"longitude":15.96},"timestamp":"1791460058","vehicle":{"id":"102221"}}},
+          {"id":"XOE3KMT01F_10477","vehicle":{"trip":{"tripId":"0_30_606_6_11988","startDate":"20261008","routeId":"6"},"position":{"latitude":45.777645,"longitude":15.983942},"timestamp":"1791460059","vehicle":{"id":"10477"}}},
+          {"id":"XOE3KMT047_22135","vehicle":{"trip":{"tripId":"0_30_611_6_11967","startDate":"20261008","routeId":"6"},"position":{"latitude":45.820286,"longitude":16.038536},"timestamp":"1791460062","vehicle":{"id":"22135"}}},
+          {"id":"XOE3KMT03N_102237","vehicle":{"trip":{"tripId":"0_30_610_6_11923","startDate":"20261008","routeId":"6"},"position":{"latitude":45.805962,"longitude":15.978015},"timestamp":"1791460054","vehicle":{"id":"102237"}}},
+          {"id":"XOE3KMT04W_102279","vehicle":{"trip":{"tripId":"0_30_612_6_11949","startDate":"20261008","routeId":"6"},"position":{"latitude":45.812248,"longitude":15.963031},"timestamp":"1791460059","vehicle":{"id":"102279"}}},
+          {"id":"XOE3KMT065_22133","vehicle":{"trip":{"tripId":"0_30_614_6_12009","startDate":"20261008","routeId":"6"},"position":{"latitude":45.815006,"longitude":15.933783},"timestamp":"1791460053","vehicle":{"id":"22133"}}},
+          {"id":"XOE3KMT05G_10416","vehicle":{"trip":{"tripId":"0_30_613_6_11983","startDate":"20261008","routeId":"6"},"position":{"latitude":45.813698,"longitude":15.941017},"timestamp":"1791460059","vehicle":{"id":"10416"}}}
+        ]
+      }
+
+      ~',
+          p_feed_id => l_feed_id,
+          p_rows    => l_rows
+        );
+        COMMIT;
+        DBMS_OUTPUT.PUT_LINE('feed_id=' || l_feed_id || ', new positions=' || l_rows);
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Show the positions, with local Zagreb time
+
+      --
+
+
+      SELECT
+        p.vehicle_id,
+        p.route_id,
+        p.observed_at AS observed_at_utc,
+        CAST(FROM_TZ(p.observed_at, 'UTC') AT TIME ZONE 'Europe/Zagreb' AS TIMESTAMP) AS observed_at_local,
+        p.geom.sdo_point.x AS lon,
+        p.geom.sdo_point.y AS lat
+      FROM
+        zet_vehicle_positions p
+      WHERE
+        p.geom.sdo_gtype = SDO_POINT2D
+        AND p.geom.sdo_srid = SDO_LONLAT
+      ORDER BY
+        p.observed_at;
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Sanity check: distance of each tram 6 position to the tram 6 track
+      (OSM)
+
+      -- Vehicles far from the track are depot runs or diversions.
+
+      --
+
+
+      SELECT
+        p.vehicle_id,
+        ROUND(MIN(SDO_GEOM.SDO_DISTANCE(p.geom, l.geom, 0.05, 'unit=M'))) AS distance_to_track_m
+      FROM
+        zet_vehicle_positions p,
+        tram_lines l
+      WHERE
+        p.route_id = l.line_ref
+      GROUP BY
+        p.vehicle_id
+      ORDER BY
+        distance_to_track_m;
+    languageId: oracle-sql
+  - kind: 1
+    value: |-
+      ### 7.2 Three Hot Days: 29–31 July 2026
+
+      **Why these days.**
+      * DHMZ dates the longest and most widespread heat wave of summer 2026 from **28 July to 16 August**.
+      * On **30 July** the Zagreb region was under an orange heat warning.
+      * From **31 July to 6 August** the heat-wave criteria were met at all eight main stations, Zagreb-Maksimir included.
+      * All three days are weekdays with full tram service.
+
+      Sources:
+      * [DHMZ heat-wave analysis 2026 (morski.hr)](https://www.morski.hr/dhmz-analizirao-toplinske-valove-u-2026-cak-6-od-8-gradova-srusilo-povijesne-rekorde-evo-gdje-je-bilo-najgore/)
+      * [Toplinski val u Hrvatskoj 2026. (Wikipedia)](https://hr.wikipedia.org/wiki/Toplinski_val_u_Hrvatskoj_2026.)
+      * [tportal, 30 July 2026](https://www.tportal.hr/vijesti/clanak/cijela-hrvatska-pod-meteoalarmom-neki-gradovi-gore-od-sest-ujutro-20260730)
+
+      **Reconstructed, not recorded.** There are no GTFS-Realtime recordings of ZET for July 2026: the public Zagreb recordings in [GISBoost/easy-GTFS-RT](https://github.com/GISBoost/easy-GTFS-RT/releases) start on 2026-09-17. So `scripts/gen_zet_july_positions.py` reconstructs the positions from the official [ZET GTFS timetable](https://zet.hr/gtfs-scheduled/latest):
+      * Every weekday tram trip (service `0_30`, 3,838 trips on 19 tram lines) moves along its GTFS shape according to its timetable and dwells at its stops.
+      * Each block (187 vehicle duties) reports a position about every 30 seconds, including short layovers at the terminus.
+      * Small random delays per trip and about 2.5 m of position noise make it look like a live feed.
+      * Vehicle ids are `SIM-<block_id>` and `feed_id` stays NULL, so reconstructed rows never mix with real feed data.
+
+      **Caveat.** The published GTFS (feed version 000396) is valid from 2026-09-28. Its weekday timetable is applied to the July dates. ZET's July summer timetable ran fewer trips, so the frequencies are approximate.
+
+      | File in `data/` | Positions | Size |
+      |---|---|---|
+      | `zet_tram_positions_20260729.csv.gz` | 365,929 | 4.8 MB |
+      | `zet_tram_positions_20260730.csv.gz` | 366,125 | 4.8 MB |
+      | `zet_tram_positions_20260731.csv.gz` | 366,074 | 4.8 MB |
+
+      Columns: `VEHICLE_ID, OBSERVED_AT_UTC (YYYY-MM-DD HH24:MI:SS), ROUTE_ID, TRIP_ID, START_DATE (YYYYMMDD), LON, LAT`.
+
+      Checks run while generating the files:
+      * Tram 6 positions lie a median of 1.5 m from the OSM tram 6 track.
+      * Between 14:00 and 16:00 Zagreb time on 29 July, 95 trams on lines 1, 6, 11, 12, 13, 14 and 17 pass within 150 m of stop A.
+
+      **Loading.** Upload the files to OCI Object Storage, read them through an external table, and insert them with one set-based `INSERT ... SELECT`:
+
+      ```bash
+      # Upload the three files and create a read-only pre-authenticated request (PAR) for the bucket
+      oci os object bulk-upload --bucket-name <bucket> --src-dir ../data --include "zet_tram_positions_202607*.csv.gz"
+      oci os preauth-request create --bucket-name <bucket> --name zet-july-2026 --access-type AnyObjectRead --time-expires 2026-12-31T00:00:00Z
+      ```
+
+      **Without Object Storage:**
+      1. Unzip the files.
+      2. Create a staging table with the same columns as the external table.
+      3. Load each file with SQLcl, for example `LOAD zet_tram_positions_july_stage ../data/zet_tram_positions_20260729.csv BATCHSIZE 5000`.
+      4. Run the `INSERT` below against the staging table.
+
+      **Querying the July data in sections 9 and 10.** The section 9 queries use the July time range with fixed UTC windows. For example, 14:00–16:00 Zagreb time on 29 July is `p.observed_at BETWEEN TIMESTAMP '2026-07-29 12:00:00' AND TIMESTAMP '2026-07-29 14:00:00'`. The live vehicle tiles in section 10 still use a window relative to now, so they show streamed positions, not the July data.
+
+      **Keep the July data.** Section 12 creates an hourly purge job that keeps only the last 24 hours, so it would delete the July data at its next run. While you work with the July data, skip that cell, or create the job with a larger `p_keep_hours`.
+    languageId: markdown
+  - kind: 2
+    value: >
+      --
+
+      -- External table over the three files in Object Storage
+
+      -- Paste the PAR URL (ending in /o/) into l_par
+
+      --
+
+
+      DECLARE
+        --l_par VARCHAR2(1000) := '<par-url-ending-in-/o/>';
+        l_par VARCHAR2(1000) := 'https://objectstorage.eu-frankfurt-1.oraclecloud.com/p/DSXeoE4yVGWojcH5Wk17fCm_TH7yydmn93FdTYYcUZyrfUjDRCWDdamEPKAgwy6E/n/oradbclouducm/b/hroug2026-bucket/o/';   -- paste your pre-authenticated request URL here; never commit it
+      BEGIN
+        DBMS_CLOUD.CREATE_EXTERNAL_TABLE(
+          table_name      => 'ZET_TRAM_POSITIONS_JULY_EXT',
+          credential_name => NULL,                                   -- a PAR URL needs no credential
+          file_uri_list   => l_par || 'zet_tram_positions_20260729.csv.gz,'
+                          || l_par || 'zet_tram_positions_20260730.csv.gz,'
+                          || l_par || 'zet_tram_positions_20260731.csv.gz',
+          column_list     => 'vehicle_id      VARCHAR2(20),
+                              observed_at_utc VARCHAR2(19),
+                              route_id        VARCHAR2(10),
+                              trip_id         VARCHAR2(64),
+                              start_date      VARCHAR2(8),
+                              lon             NUMBER,
+                              lat             NUMBER',
+          format          => JSON_OBJECT('type' VALUE 'csv', 'skipheaders' VALUE 1, 'compression' VALUE 'gzip')
+        );
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Check the files before loading: expected 365,929 / 366,125 / 366,074
+      positions and 187 trams per day
+
+      --
+
+
+      SELECT
+        start_date,
+        COUNT(*) AS positions,
+        COUNT(DISTINCT vehicle_id) AS trams,
+        MIN(observed_at_utc) AS first_utc,
+        MAX(observed_at_utc) AS last_utc
+      FROM
+        zet_tram_positions_july_ext
+      GROUP BY
+        start_date
+      ORDER BY
+        start_date;
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Bulk load: one direct-path INSERT ... SELECT, points built with
+      SDO_GEOMETRY(lon, lat)
+
+      -- (APPEND falls back to a conventional insert where direct path does not
+      apply)
+
+      --
+
+
+      INSERT /*+ APPEND */ INTO zet_vehicle_positions (
+        vehicle_id,
+        observed_at,
+        route_id,
+        trip_id,
+        start_date,
+        feed_id,
+        geom
+      )
+
+      SELECT
+        vehicle_id,
+        TO_TIMESTAMP(observed_at_utc, 'YYYY-MM-DD HH24:MI:SS'),
+        route_id,
+        trip_id,
+        TO_DATE(start_date, 'YYYYMMDD'),
+        NULL,                                                        -- no feed message: reconstructed from the timetable
+        SDO_GEOMETRY(lon, lat)                                       -- 26ai lon/lat constructor (2001, 4326)
+      FROM
+        zet_tram_positions_july_ext;
+
+      COMMIT;
+    languageId: oracle-sql
+  - kind: 1
+    value: "[Tram
+      positions](https://ij1tyzir3wpwlpe-kpadw23ai.adb.eu-frankfurt-1.oracleclo\
+      udapps.com/spatialstudio/api/v1/jsonstream/51825a461c3810ad7a828ca424afac\
+      ca) are available as GeoJSON via Spatial Studio."
+    languageId: markdown
+  - kind: 2
+    value: >
+      --
+
+      -- Gather table statistics after the bulk load (1.1 million new rows), so
+      the optimizer
+
+      -- plans the following queries with current row counts. Default
+      granularity: global and partition statistics.
+
+      --
+
+
+      BEGIN
+        DBMS_STATS.GATHER_TABLE_STATS(
+          ownname          => USER,
+          tabname          => 'ZET_VEHICLE_POSITIONS',
+          estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
+          degree           => DBMS_STATS.AUTO_DEGREE
+        );
+      END;
+
+      /
+
+
+      --
+
+      -- Check: rows in the table statistics and the hourly partitions that
+      received rows
+
+      -- (75 for the July data, plus 1 for the 8 October sample from 7.1)
+
+      --
+
+
+      SELECT
+        table_name,
+        num_rows,
+        last_analyzed
+      FROM
+        user_tables
+      WHERE
+        table_name = 'ZET_VEHICLE_POSITIONS';
+
+      SELECT
+        COUNT(*) AS partitions_with_rows,
+        SUM(num_rows) AS rows_in_partitions
+      FROM
+        user_tab_partitions
+      WHERE
+        table_name = 'ZET_VEHICLE_POSITIONS'
+        AND num_rows > 0;
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- The three hot days per service date (Zagreb local time)
+
+      --
+
+
+      SELECT
+        TO_CHAR(start_date, 'YYYY-MM-DD') AS service_date,
+        COUNT(*) AS positions,
+        COUNT(DISTINCT vehicle_id) AS trams,
+        COUNT(DISTINCT route_id) AS tram_lines,
+        MIN(CAST(FROM_TZ(observed_at, 'UTC') AT TIME ZONE 'Europe/Zagreb' AS TIMESTAMP)) AS first_local,
+        MAX(CAST(FROM_TZ(observed_at, 'UTC') AT TIME ZONE 'Europe/Zagreb' AS TIMESTAMP)) AS last_local
+      FROM
+        zet_vehicle_positions
+      WHERE
+        vehicle_id LIKE 'SIM-%'
+      GROUP BY
+        start_date
+      ORDER BY
+        start_date;
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Trams in service per hour, 29 July 2026 (Zagreb local time)
+
+      --
+
+
+      SELECT
+        local_hour,
+        COUNT(DISTINCT vehicle_id) AS active_trams,
+        COUNT(*) AS positions
+      FROM (
+        SELECT
+          vehicle_id,
+          EXTRACT(HOUR FROM CAST(FROM_TZ(observed_at, 'UTC') AT TIME ZONE 'Europe/Zagreb' AS TIMESTAMP)) AS local_hour
+        FROM
+          zet_vehicle_positions
+        WHERE
+          vehicle_id LIKE 'SIM-%'
+          AND start_date = DATE '2026-07-29'
+      )
+
+      GROUP BY
+        local_hour
+      ORDER BY
+        local_hour;
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- The data now lives in ZET_VEHICLE_POSITIONS: the external table is no
+      longer needed
+
+      --
+
+
+      DROP TABLE IF EXISTS zet_tram_positions_july_ext;
+    languageId: oracle-sql
+  - kind: 1
+    value: >-
+      ## 8. Spatio-temporal CBTREE Index
+
+
+      Create the index **after** the first positions are in. 26ai then creates
+      the spatial metadata automatically.
+
+
+      `FILTER BY observed_at` adds the timestamp to the CBTREE index, so a query
+      that filters by place and time is evaluated in a single index search.
+
+
+      `SDO_POINT_FIELD_ONLY=TRUE` is recommended because all points are stored
+      in the `SDO_POINT` attribute.
+    languageId: markdown
+  - kind: 2
+    value: >
+      --
+
+      -- Create the spatio-temporal index (geometry + timestamp)
+
+      --
+
+
+      CREATE INDEX IF NOT EXISTS zet_vehicle_positions_stidx ON
+      zet_vehicle_positions (geom)
+        INDEXTYPE IS MDSYS.SPATIAL_INDEX_V2
+        FILTER BY observed_at
+        PARAMETERS ('cbtree_index=true layer_gtype=point sdo_point_field_only=true');
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Check: automatically created spatial metadata and the index
+
+      --
+
+
+      SELECT * FROM user_sdo_geom_metadata WHERE table_name =
+      'ZET_VEHICLE_POSITIONS';
+
+
+      SELECT index_name, table_name, column_name, sdo_index_type FROM
+      user_sdo_index_info
+
+      WHERE table_name = 'ZET_VEHICLE_POSITIONS';
+    languageId: oracle-sql
+  - kind: 1
+    value: >-
+      ## 9. Spatio-temporal Queries
+
+
+      **Which vehicles passed stop A (Trg bana Josipa Jelačića) within the time
+      window?**
+
+
+      The query window comes from a join with `TRAM_STATIONS`, so keep the
+      `DOMAIN_INDEX_FILTER` hint, as in the CBTREE template notebook.
+
+
+      The queries cover the analyzed July time range: the three hot days 29–31
+      July 2026 in Zagreb time, loaded in section 7.2. Zagreb is at UTC+2 in
+      summer, so in UTC the range runs from 28 July 22:00:00 to 31 July
+      21:59:59. The real feed sample from section 7.1 (8 October) lies outside
+      this range. Once the loader is streaming, use a window relative to now,
+      for example the last 30 minutes: `p.observed_at >=
+      SYS_EXTRACT_UTC(SYSTIMESTAMP) - INTERVAL '30' MINUTE`.
+    languageId: markdown
+  - kind: 2
+    value: >
+      --
+
+      -- Explain plan: spatial and temporal predicates evaluated in the CBTREE
+      index
+
+      --
+
+
+      EXPLAIN PLAN FOR
+
+      SELECT
+        /*+ NO_RESULT_CACHE DOMAIN_INDEX_FILTER(p zet_vehicle_positions_stidx) */
+        p.vehicle_id,
+        p.route_id,
+        COUNT(*) AS positions
+      FROM
+        zet_vehicle_positions p,
+        tram_stations s
+      WHERE
+        s.station_code = 'A'
+        AND SDO_WITHIN_DISTANCE(p.geom, s.geom, 'distance=150 unit=M') = 'TRUE'
+        AND p.observed_at BETWEEN
+          TIMESTAMP '2026-07-28 22:00:00'        -- 29 July 2026, 00:00:00 Zagreb time (UTC+2)
+          AND TIMESTAMP '2026-07-31 21:59:59'    -- 31 July 2026, 23:59:59 Zagreb time
+      GROUP BY
+        p.vehicle_id,
+        p.route_id;
+
+      SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY);
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Vehicles within 150 m of stop A on the hot days, 29–31 July 2026
+      (Zagreb time)
+
+      --
+
+
+      SELECT
+        /*+ NO_RESULT_CACHE DOMAIN_INDEX_FILTER(p zet_vehicle_positions_stidx) */
+        p.vehicle_id,
+        p.route_id,
+        MIN(CAST(FROM_TZ(p.observed_at, 'UTC') AT TIME ZONE 'Europe/Zagreb' AS TIMESTAMP)) AS first_seen_local,
+        MAX(CAST(FROM_TZ(p.observed_at, 'UTC') AT TIME ZONE 'Europe/Zagreb' AS TIMESTAMP)) AS last_seen_local,
+        COUNT(*) AS positions
+      FROM
+        zet_vehicle_positions p,
+        tram_stations s
+      WHERE
+        s.station_code = 'A'
+        AND SDO_WITHIN_DISTANCE(p.geom, s.geom, 'distance=150 unit=M') = 'TRUE'
+        AND p.observed_at BETWEEN
+          TIMESTAMP '2026-07-28 22:00:00'        -- 29 July 2026, 00:00:00 Zagreb time (UTC+2)
+          AND TIMESTAMP '2026-07-31 21:59:59'    -- 31 July 2026, 23:59:59 Zagreb time
+      GROUP BY
+        p.vehicle_id,
+        p.route_id
+      ORDER BY
+        first_seen_local;
+    languageId: oracle-sql
+  - kind: 1
+    value: "**The important question:** which trams passed stop A between 14:00 and
+      16:00 Zagreb time on each of the three hot days, 29–31 July 2026? Each
+      local time window is converted to UTC once, in the `WITH` clause. The
+      three days come from a table value constructor (`VALUES`)."
+    languageId: markdown
+  - kind: 2
+    value: >
+      --
+
+      -- Trams at stop A between 14:00 and 16:00 local time (Europe/Zagreb),
+
+      -- on each hot day, 29–31 July 2026
+
+      --
+
+
+      WITH win AS (
+        SELECT
+          d.local_day,
+          SYS_EXTRACT_UTC(FROM_TZ(CAST(d.local_day AS TIMESTAMP) + INTERVAL '14' HOUR, 'Europe/Zagreb')) AS t_from,
+          SYS_EXTRACT_UTC(FROM_TZ(CAST(d.local_day AS TIMESTAMP) + INTERVAL '16' HOUR, 'Europe/Zagreb')) AS t_to
+        FROM
+          (VALUES (DATE '2026-07-29'), (DATE '2026-07-30'), (DATE '2026-07-31')) d (local_day)
+      )
+
+
+      SELECT
+        /*+ NO_RESULT_CACHE DOMAIN_INDEX_FILTER(p zet_vehicle_positions_stidx) */
+        win.local_day,
+        p.route_id,
+        COUNT(DISTINCT p.vehicle_id) AS vehicles,
+        COUNT(*) AS positions
+      FROM
+        zet_vehicle_positions p,
+        tram_stations s,
+        win
+      WHERE
+        s.station_code = 'A'
+        AND SDO_WITHIN_DISTANCE(p.geom, s.geom, 'distance=150 unit=M') = 'TRUE'
+        AND p.observed_at BETWEEN win.t_from AND win.t_to
+      GROUP BY
+        win.local_day,
+        p.route_id
+      ORDER BY
+        win.local_day,
+        vehicles DESC;
+    languageId: oracle-sql
+  - kind: 1
+    value: |-
+      ## 10. Vector Tiles
+
+      `SDO_UTIL.GET_VECTORTILE` returns a Mapbox Vector Tile (BLOB) for a tile address `z/x/y` in the Google tiling scheme.
+      * **Static layers:** `TRAM_LINES` and `TRAM_STATIONS` use the table form of the function.
+      * **Live layer:** the vehicles use the cursor form, so the tile query can filter by time as well (last 2 minutes by default).
+
+      References:
+      * [SDO_UTIL.GET_VECTORTILE](https://docs.oracle.com/en/database/oracle/oracle-database/23/spatl/sdo_util-get_vectortile.html)
+      * [SDO_UTIL.GET_TILE_ENVELOPE](https://docs.oracle.com/en/database/oracle/oracle-database/26/spatl/sdo_util-get_tile_envelope.html)
+
+      Tile addresses for stop A: zoom 12 → 2229/1460, 13 → 4459/2920, 14 → 8919/5841, 15 → 17838/11682.
+    languageId: markdown
+  - kind: 2
+    value: >
+      --
+
+      -- Tile coordinates (Google tiling scheme) for stop A at zoom levels 12 to
+      15
+
+      --
+
+
+      SELECT
+        z.zoom,
+        FLOOR((s.geom.sdo_point.x + 180) / 360 * POWER(2, z.zoom)) AS tile_x,
+        FLOOR(
+          (1 - LN(TAN(s.geom.sdo_point.y * ACOS(-1) / 180) + 1 / COS(s.geom.sdo_point.y * ACOS(-1) / 180)) / ACOS(-1))
+          / 2 * POWER(2, z.zoom)
+        ) AS tile_y
+      FROM
+        tram_stations s,
+        (SELECT LEVEL + 11 AS zoom FROM dual CONNECT BY LEVEL <= 4) z
+      WHERE
+        s.station_code = 'A'
+      ORDER BY
+        z.zoom;
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Tile envelope of tile 14/8919/5841 (city centre with stop A)
+
+      --
+
+
+      SELECT SDO_UTIL.GET_TILE_ENVELOPE(tile_zoom => 14, tile_x => 8919, tile_y
+      => 5841) AS tile_envelope FROM dual;
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Static layers: vector tiles for the tram 6 track and stops (size in
+      bytes)
+
+      --
+
+
+      SELECT
+        DBMS_LOB.GETLENGTH(
+          SDO_UTIL.GET_VECTORTILE(
+            TABLE_NAME    => 'TRAM_LINES',
+            GEOM_COL_NAME => 'GEOM',
+            ATT_COL_NAMES => SDO_STRING_ARRAY('LINE_REF', 'ROUTE_NAME'),
+            TILE_X        => 8919,
+            TILE_Y        => 5841,
+            TILE_ZOOM     => 14,
+            LAYER_NAME    => 'tram_lines'
+          )
+        ) AS tram_lines_tile_bytes,
+        DBMS_LOB.GETLENGTH(
+          SDO_UTIL.GET_VECTORTILE(
+            TABLE_NAME    => 'TRAM_STATIONS',
+            GEOM_COL_NAME => 'GEOM',
+            ATT_COL_NAMES => SDO_STRING_ARRAY('STATION_CODE', 'STATION_NAME'),
+            TILE_X        => 8919,
+            TILE_Y        => 5841,
+            TILE_ZOOM     => 14,
+            LAYER_NAME    => 'tram_stations'
+          )
+        ) AS tram_stations_tile_bytes
+      FROM
+        dual;
+    languageId: oracle-sql
+  - kind: 1
+    value: >-
+      **Live layer.** `ZET_TILES.VEHICLES` builds the tile from a cursor:
+
+      * It computes the tile envelope once, so the query has no join and the
+      optimizer can use the CBTREE time filter from statistics. This matters
+      because ORDS sessions on the Data Lakehouse workload ignore hints.
+
+      * It returns the positions of the last `p_window_s` seconds with their
+      age, so the map can fade older positions into a short trail.
+    languageId: markdown
+  - kind: 2
+    value: >
+      CREATE OR REPLACE PACKAGE zet_tiles AS
+
+        -- Vector tile (layer "vehicles") with the positions of the last p_window_s seconds
+        FUNCTION vehicles (
+          p_z        IN NUMBER,
+          p_x        IN NUMBER,
+          p_y        IN NUMBER,
+          p_window_s IN NUMBER DEFAULT 120
+        ) RETURN BLOB;
+
+      END zet_tiles;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      CREATE OR REPLACE PACKAGE BODY zet_tiles AS
+
+        FUNCTION vehicles (
+          p_z        IN NUMBER,
+          p_x        IN NUMBER,
+          p_y        IN NUMBER,
+          p_window_s IN NUMBER DEFAULT 120
+        ) RETURN BLOB IS
+          l_now      TIMESTAMP     := SYS_EXTRACT_UTC(SYSTIMESTAMP);
+          l_from     TIMESTAMP     := l_now - NUMTODSINTERVAL(p_window_s, 'SECOND');
+          l_envelope SDO_GEOMETRY  := SDO_UTIL.GET_TILE_ENVELOPE(tile_zoom => p_z, tile_x => p_x, tile_y => p_y);
+          l_params   VARCHAR2(200) := 'mask=anyinteract min_resolution='
+                                      || TO_CHAR((40075016.0 / POWER(2, p_z)) * .001, 'FM999999990.0000', q'[NLS_NUMERIC_CHARACTERS='.,']')
+                                      || ' bypass_point=true';
+          l_cur      SYS_REFCURSOR;
+        BEGIN
+          OPEN l_cur FOR
+            SELECT
+              /*+ DOMAIN_INDEX_FILTER(v zet_vehicle_positions_stidx) */
+              v.geom,                                                            -- geometry first
+              v.vehicle_id,
+              v.route_id,
+              ROUND((CAST(l_now AS DATE) - CAST(v.observed_at AS DATE)) * 86400) AS age_s
+            FROM
+              zet_vehicle_positions v
+            WHERE
+              v.observed_at >= l_from
+              AND SDO_RELATE(v.geom, l_envelope, l_params) = 'TRUE';
+
+          RETURN SDO_UTIL.GET_VECTORTILE(
+            cur        => l_cur,
+            tile_x     => p_x,
+            tile_y     => p_y,
+            tile_zoom  => p_z,
+            layer_name => 'vehicles'
+          );
+        END vehicles;
+
+      END zet_tiles;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Live layer test: tile 14/8919/5841 with a 24 hour window (finds the
+      sample from section 7)
+
+      --
+
+
+      SELECT DBMS_LOB.GETLENGTH(zet_tiles.vehicles(14, 8919, 5841, 86400)) AS
+      vehicles_tile_bytes FROM dual;
+    languageId: oracle-sql
+  - kind: 1
+    value: >-
+      ## 11. REST Endpoints with ORDS
+
+
+      | Module | Endpoint | Method | Access |
+
+      |---|---|---|---|
+
+      | `zet.tiles` | `/ords/<schema>/zet/vt/vehicles/{z}/{x}/{y}` | GET |
+      Public, read-only |
+
+      | `zet.tiles` | `/ords/<schema>/zet/vt/tram-lines/{z}/{x}/{y}` | GET |
+      Public, read-only |
+
+      | `zet.tiles` | `/ords/<schema>/zet/vt/tram-stations/{z}/{x}/{y}` | GET |
+      Public, read-only |
+
+      | `zet.ingest` | `/ords/<schema>/zet-ingest/positions` | POST | OAuth
+      client credentials (privilege `zet.ingest.write`) |
+
+
+      The tile handlers use the `media` source type: the first column is the
+      content type and the second is the tile BLOB.
+    languageId: markdown
+  - kind: 2
+    value: |
+      --
+      -- REST-enable the schema (no-op if already enabled)
+      --
+
+      BEGIN
+        ORDS.ENABLE_SCHEMA(
+          p_enabled             => TRUE,
+          p_url_mapping_type    => 'BASE_PATH',
+          p_url_mapping_pattern => LOWER(USER),
+          p_auto_rest_auth      => TRUE
+        );
+        COMMIT;
+      END;
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Public tile module: live vehicles and the static tram 6 layers
+
+      --
+
+
+      BEGIN
+        ORDS.DEFINE_MODULE(
+          p_module_name => 'zet.tiles',
+          p_base_path   => '/zet/',
+          p_status      => 'PUBLISHED',
+          p_comments    => 'ZET vector tiles (Mapbox Vector Tile format)'
+        );
+
+        -- Live vehicle positions (last 2 minutes)
+        ORDS.DEFINE_TEMPLATE(p_module_name => 'zet.tiles', p_pattern => 'vt/vehicles/:z/:x/:y');
+        ORDS.DEFINE_HANDLER(
+          p_module_name => 'zet.tiles',
+          p_pattern     => 'vt/vehicles/:z/:x/:y',
+          p_method      => 'GET',
+          p_source_type => ORDS.source_type_media,
+          p_source      => q'[
+            SELECT 'application/vnd.mapbox-vector-tile',
+                   zet_tiles.vehicles(TO_NUMBER(:z), TO_NUMBER(:x), TO_NUMBER(:y))
+            FROM dual]'
+        );
+
+        -- Tram 6 track
+        ORDS.DEFINE_TEMPLATE(p_module_name => 'zet.tiles', p_pattern => 'vt/tram-lines/:z/:x/:y');
+        ORDS.DEFINE_HANDLER(
+          p_module_name => 'zet.tiles',
+          p_pattern     => 'vt/tram-lines/:z/:x/:y',
+          p_method      => 'GET',
+          p_source_type => ORDS.source_type_media,
+          p_source      => q'[
+            SELECT 'application/vnd.mapbox-vector-tile',
+                   SDO_UTIL.GET_VECTORTILE(
+                     TABLE_NAME    => 'TRAM_LINES',
+                     GEOM_COL_NAME => 'GEOM',
+                     ATT_COL_NAMES => SDO_STRING_ARRAY('LINE_REF', 'ROUTE_NAME'),
+                     TILE_X        => TO_NUMBER(:x),
+                     TILE_Y        => TO_NUMBER(:y),
+                     TILE_ZOOM     => TO_NUMBER(:z),
+                     LAYER_NAME    => 'tram_lines')
+            FROM dual]'
+        );
+
+        -- Tram 6 stops A-D
+        ORDS.DEFINE_TEMPLATE(p_module_name => 'zet.tiles', p_pattern => 'vt/tram-stations/:z/:x/:y');
+        ORDS.DEFINE_HANDLER(
+          p_module_name => 'zet.tiles',
+          p_pattern     => 'vt/tram-stations/:z/:x/:y',
+          p_method      => 'GET',
+          p_source_type => ORDS.source_type_media,
+          p_source      => q'[
+            SELECT 'application/vnd.mapbox-vector-tile',
+                   SDO_UTIL.GET_VECTORTILE(
+                     TABLE_NAME    => 'TRAM_STATIONS',
+                     GEOM_COL_NAME => 'GEOM',
+                     ATT_COL_NAMES => SDO_STRING_ARRAY('STATION_CODE', 'STATION_NAME'),
+                     TILE_X        => TO_NUMBER(:x),
+                     TILE_Y        => TO_NUMBER(:y),
+                     TILE_ZOOM     => TO_NUMBER(:z),
+                     LAYER_NAME    => 'tram_stations')
+            FROM dual]'
+        );
+
+        COMMIT;
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Protected ingest module: the loader POSTs one feed message (JSON) per
+      poll
+
+      --
+
+
+      BEGIN
+        ORDS.DEFINE_MODULE(
+          p_module_name => 'zet.ingest',
+          p_base_path   => '/zet-ingest/',
+          p_status      => 'PUBLISHED',
+          p_comments    => 'Ingest ZET GTFS-Realtime feed messages (Protocol Buffers JSON mapping)'
+        );
+
+        ORDS.DEFINE_TEMPLATE(p_module_name => 'zet.ingest', p_pattern => 'positions');
+        ORDS.DEFINE_HANDLER(
+          p_module_name   => 'zet.ingest',
+          p_pattern       => 'positions',
+          p_method        => 'POST',
+          p_source_type   => ORDS.source_type_plsql,
+          p_mimes_allowed => 'application/json',
+          p_source        => q'[
+            DECLARE
+              l_payload CLOB := :body_text;      -- dereference the body bind exactly once
+              l_feed_id NUMBER;
+              l_rows    NUMBER;
+            BEGIN
+              zet_stream.ingest(l_payload, l_feed_id, l_rows);
+              COMMIT;
+              :status_code := 201;
+              HTP.P('{"feed_id":' || l_feed_id || ',"new_positions":' || l_rows || '}');
+            END;]'
+        );
+
+        COMMIT;
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Protect the ingest module with a privilege
+
+      --
+
+
+      DECLARE
+        l_roles    OWA.VC_ARR;
+        l_patterns OWA.VC_ARR;
+        l_modules  OWA.VC_ARR;
+      BEGIN
+        ORDS.DEFINE_PRIVILEGE(
+          p_privilege_name => 'zet.ingest.write',
+          p_roles          => l_roles,
+          p_patterns       => l_patterns,
+          p_modules        => l_modules,
+          p_label          => 'ZET feed ingest',
+          p_description    => 'POST ZET GTFS-Realtime feed messages to /zet-ingest/positions'
+        );
+
+        ORDS.SET_MODULE_PRIVILEGE(
+          p_module_name    => 'zet.ingest',
+          p_privilege_name => 'zet.ingest.write'
+        );
+
+        COMMIT;
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 1
+    value: >-
+      **OAuth client for the loader.** The next cell prints a client id and a
+      client secret.
+
+
+      **Copy them into the local `.credentials` file. Never into a script, never
+      into this notebook, and never commit them.** Replace the support e-mail
+      placeholder before running the cell.
+    languageId: markdown
+  - kind: 2
+    value: >
+      --
+
+      -- Register the OAuth client used by the loader (client credentials flow)
+
+      --
+
+
+      DECLARE
+        l_client ORDS_TYPES.T_CLIENT_CREDENTIALS;
+      BEGIN
+        l_client := ORDS_SECURITY.REGISTER_CLIENT(
+          p_name            => 'zet-gtfsrt-loader',
+          p_grant_type      => 'client_credentials',
+          p_description     => 'Loader that posts ZET GTFS-Realtime feed messages',
+          p_support_email   => 'karin.patenge@oracle.com',
+          p_privilege_names => 'zet.ingest.write'
+        );
+
+        l_client.client_key.name := 'zet-gtfsrt-loader';
+        l_client := ORDS_SECURITY.ROTATE_CLIENT_SECRET(
+          p_client_key      => l_client.client_key,
+          p_revoke_existing => TRUE
+        );
+
+        DBMS_OUTPUT.PUT_LINE('client_id=' || l_client.client_key.client_id);
+        DBMS_OUTPUT.PUT_LINE('client_secret=' || l_client.client_secret.secret);
+        COMMIT;
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: |
+      --
+      -- Check the REST modules and templates
+      --
+
+      SELECT m.name AS module_name, m.uri_prefix, t.uri_template
+      FROM user_ords_modules m JOIN user_ords_templates t ON t.module_id = m.id
+      WHERE m.name LIKE 'zet.%'
+      ORDER BY m.name, t.uri_template;
+    languageId: oracle-sql
+  - kind: 1
+    value: >-
+      **Test from the command line** (replace `<adb-host>` and `<schema>`):
+
+
+      ```bash
+
+      # Static tile, tram 6 track
+
+      curl -s -o tram6.pbf
+      https://<adb-host>/ords/<schema>/zet/vt/tram-lines/14/8919/5841
+
+
+      # Token for the loader (client id and secret from .credentials)
+
+      curl -s -u "$ZET_CLIENT_ID:$ZET_CLIENT_SECRET" -d
+      "grant_type=client_credentials"
+      https://<adb-host>/ords/<schema>/oauth/token
+
+
+      # Post one feed message as JSON
+
+      curl -s -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type:
+      application/json" \
+           --data-binary @feed.json https://<adb-host>/ords/<schema>/zet-ingest/positions
+      ```
+
+
+      The map adds the three tile URLs as `vector` sources (MapLibre GL JS). The
+      live layer is refreshed every few seconds.
+    languageId: markdown
+  - kind: 1
+    value: |-
+      ## 12. Retention
+
+      For the demo, a scheduler job keeps 24 hours of data.
+    languageId: markdown
+  - kind: 2
+    value: >
+      --
+
+      -- Hourly purge job: keep 24 hours of positions and raw messages
+
+      --
+
+
+      BEGIN
+        DBMS_SCHEDULER.CREATE_JOB(
+          job_name        => 'ZET_PURGE_JOB',
+          job_type        => 'PLSQL_BLOCK',
+          job_action      => 'BEGIN zet_stream.purge(p_keep_hours => 24); COMMIT; END;',
+          start_date      => SYSTIMESTAMP,
+          repeat_interval => 'FREQ=HOURLY',
+          enabled         => TRUE,
+          comments        => 'Keep 24 hours of ZET vehicle positions'
+        );
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Monitor the purge job: state, run counts, last and next run (Zagreb
+      time)
+
+      --
+
+
+      SELECT
+        job_name,
+        state,
+        enabled,
+        run_count,
+        failure_count,
+        CAST(last_start_date AT TIME ZONE 'Europe/Zagreb' AS TIMESTAMP(0)) AS last_start_local,
+        last_run_duration,
+        CAST(next_run_date AT TIME ZONE 'Europe/Zagreb' AS TIMESTAMP(0)) AS next_run_local
+      FROM
+        user_scheduler_jobs
+      WHERE
+        job_name = 'ZET_PURGE_JOB';
+
+      --
+
+      -- Job runs of the last 24 hours, newest first, with error code and
+      message of failed runs
+
+      --
+
+
+      SELECT
+        log_id,
+        CAST(actual_start_date AT TIME ZONE 'Europe/Zagreb' AS TIMESTAMP(0)) AS started_local,
+        run_duration,
+        status,
+        error#,
+        errors
+      FROM
+        user_scheduler_job_run_details
+      WHERE
+        job_name = 'ZET_PURGE_JOB'
+        AND log_date > SYSTIMESTAMP - INTERVAL '24' HOUR
+      ORDER BY
+        log_date DESC;
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Disable the purge job (uncomment to run)
+
+      -- The job and its run history stay;
+      DBMS_SCHEDULER.ENABLE('ZET_PURGE_JOB') switches it on again.
+
+      -- force => TRUE: a run in progress is allowed to finish, no further runs
+      start.
+
+      --
+
+
+      BEGIN
+        DBMS_SCHEDULER.DISABLE(name => 'ZET_PURGE_JOB', force => TRUE);
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: |
+      --
+      -- Stream statistics
+      --
+
+      SELECT
+        COUNT(*) AS feed_messages,
+        MIN(feed_ts) AS first_feed_utc,
+        MAX(feed_ts) AS last_feed_utc
+      FROM
+        zet_feed_raw;
+
+      SELECT
+        COUNT(*) AS positions,
+        COUNT(DISTINCT vehicle_id) AS vehicles,
+        COUNT(DISTINCT route_id) AS routes,
+        MIN(observed_at) AS first_utc,
+        MAX(observed_at) AS last_utc
+      FROM
+        zet_vehicle_positions;
+    languageId: oracle-sql
+  - kind: 1
+    value: |-
+      ## 13. Loader Job in the Database
+
+      The loader runs inside the database, so no Python script or external machine is needed. The function `ZET_FEED.POLL` runs every 15 seconds as the scheduler job `ZET_FEED_JOB`:
+
+      1. **Fetch** the feed message with `UTL_HTTP` over HTTPS: about 75 KB of protobuf.
+      2. **Decode** the protobuf in PL/SQL. GTFS-Realtime needs only three protobuf wire types: varints (base-128 integers), length-delimited fields (strings and nested messages) and 32-bit floats (`UTL_RAW.CAST_TO_BINARY_FLOAT`). The decoder skips everything except the header and the vehicle positions, and builds the JSON that `ZET_STREAM.INGEST` expects with `JSON_OBJECT_T`.
+      3. **Ingest** with `ZET_STREAM.INGEST` (section 6): the same landing table and `MERGE` as the ORDS endpoint. A message whose header timestamp is already in `ZET_FEED_RAW` is skipped, so polling an unchanged feed adds nothing.
+
+      A Python copy of the decoder logic gave the same result as Google's protobuf library for a live message of 8 October 2026 (291 vehicles, 14 on tram 6).
+
+      | | External loader (section 11) | Loader job (this section) |
+      |---|---|---|
+      | Runs | Outside the database, POSTs to `/zet-ingest/positions` | In the database, as a scheduler job |
+      | Needs | Script, protobuf library, OAuth client | Package `ZET_FEED`, job `ZET_FEED_JOB`, network ACL |
+      | Stored in `ZET_FEED_RAW` | What the loader sends | Header and vehicle positions; trip updates are skipped |
+
+      **Prerequisite, run once as ADMIN.** Autonomous AI Database allows outbound HTTPS on port 443 to hosts that a network ACL opens. Its default wallet holds the common public root certificates; zet.hr uses a Sectigo certificate. Replace `<SCHEMA>` with the notebook schema:
+
+      ```sql
+      BEGIN
+        DBMS_NETWORK_ACL_ADMIN.APPEND_HOST_ACE(
+          host       => 'zet.hr',
+          lower_port => 443,
+          upper_port => 443,
+          ace        => xs$ace_type(privilege_list => xs$name_list('http'),
+                                    principal_name => '<SCHEMA>',
+                                    principal_type => xs_acl.ptype_db));
+      END;
+      /
+      -- Only if compiling ZET_FEED reports PLS-00201 for UTL_HTTP:
+      GRANT EXECUTE ON UTL_HTTP TO <SCHEMA>;
+      ```
+
+      **Every 15 seconds** (`FREQ=SECONDLY;INTERVAL=15`) means 5,760 runs a day, so the job logs failed runs only; `RUN_COUNT` still counts every run. A run never overlaps the previous one, and a 10-second transfer timeout ends a hanging request before the next run is due. The purge job from section 12 keeps the tables at 24 hours.
+
+      References:
+      * [GTFS Realtime protocol buffer definition](https://gtfs.org/documentation/realtime/proto/)
+      * [Protocol Buffers encoding](https://protobuf.dev/programming-guides/encoding/)
+      * [Autonomous AI Database: call web services](https://docs.oracle.com/en/cloud/paas/autonomous-database/serverless/adbsb/call-web-services.html)
+      * [UTL_HTTP (26ai)](https://docs.oracle.com/en/database/oracle/oracle-database/26/arpls/UTL_HTTP.html), [UTL_RAW (26ai)](https://docs.oracle.com/en/database/oracle/oracle-database/26/arpls/UTL_RAW.html), [DBMS_SCHEDULER (26ai)](https://docs.oracle.com/en/database/oracle/oracle-database/26/arpls/DBMS_SCHEDULER.html)
+    languageId: markdown
+  - kind: 2
+    value: >
+      --
+
+      -- Check the network ACL: one row with PRIVILEGE = HTTP for zet.hr, port
+      443
+
+      --
+
+
+      SELECT host, lower_port, upper_port, privilege, status
+
+      FROM user_host_aces
+
+      WHERE host = 'zet.hr';
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      CREATE OR REPLACE PACKAGE zet_feed AS
+
+        -- ZET GTFS-Realtime feed (protobuf)
+        c_feed_url CONSTANT VARCHAR2(100) := 'https://zet.hr/gtfs-rt-protobuf';
+
+        -- Fetch one feed message (protobuf) over HTTPS
+        FUNCTION fetch_feed (p_url IN VARCHAR2 DEFAULT c_feed_url) RETURN BLOB;
+
+        -- Decode a GTFS-RT FeedMessage into the JSON that ZET_STREAM.INGEST expects (header and vehicle positions)
+        FUNCTION to_json (p_feed IN BLOB) RETURN CLOB;
+
+        -- Poll once: fetch, decode, ingest. Returns the number of new positions, 0 if the message was loaded before.
+        -- The caller commits.
+        FUNCTION poll (p_url IN VARCHAR2 DEFAULT c_feed_url) RETURN NUMBER;
+
+      END zet_feed;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      CREATE OR REPLACE PACKAGE BODY zet_feed AS
+
+        -- Decoder state: the message and the read position (1-based, as in DBMS_LOB)
+        g_msg BLOB;
+        g_pos PLS_INTEGER;
+
+        ------------------------------------------------------------------------------------------------
+        -- Protobuf wire format (https://protobuf.dev/programming-guides/encoding/)
+        ------------------------------------------------------------------------------------------------
+
+        FUNCTION read_byte RETURN PLS_INTEGER IS
+          l_byte PLS_INTEGER;
+        BEGIN
+          l_byte := TO_NUMBER(RAWTOHEX(DBMS_LOB.SUBSTR(g_msg, 1, g_pos)), 'XX');
+          g_pos  := g_pos + 1;
+          RETURN l_byte;
+        END read_byte;
+
+        -- Varint (wire type 0): 7 bits per byte, least significant group first
+        FUNCTION read_varint RETURN NUMBER IS
+          l_byte  PLS_INTEGER;
+          l_value NUMBER := 0;
+          l_mult  NUMBER := 1;
+        BEGIN
+          LOOP
+            l_byte  := read_byte;
+            l_value := l_value + MOD(l_byte, 128) * l_mult;
+            EXIT WHEN l_byte < 128;
+            l_mult  := l_mult * 128;
+          END LOOP;
+          RETURN l_value;
+        END read_varint;
+
+        -- Length-delimited UTF-8 string (wire type 2)
+        FUNCTION read_string RETURN VARCHAR2 IS
+          l_len PLS_INTEGER := read_varint;
+          l_str VARCHAR2(32767);
+        BEGIN
+          IF l_len > 0 THEN
+            l_str := UTL_RAW.CAST_TO_VARCHAR2(DBMS_LOB.SUBSTR(g_msg, l_len, g_pos));
+            g_pos := g_pos + l_len;
+          END IF;
+          RETURN l_str;
+        END read_string;
+
+        -- 32-bit IEEE 754 float, little-endian (wire type 5)
+        FUNCTION read_float RETURN NUMBER IS
+          l_value BINARY_FLOAT;
+        BEGIN
+          l_value := UTL_RAW.CAST_TO_BINARY_FLOAT(DBMS_LOB.SUBSTR(g_msg, 4, g_pos), UTL_RAW.LITTLE_ENDIAN);
+          g_pos   := g_pos + 4;
+          RETURN ROUND(TO_NUMBER(l_value), 6);
+        END read_float;
+
+        -- Skip a field the decoder doesn't need
+        PROCEDURE skip_field (p_wire IN PLS_INTEGER) IS
+          l_len NUMBER;
+        BEGIN
+          CASE p_wire
+            WHEN 0 THEN l_len := read_varint;                         -- varint
+            WHEN 1 THEN g_pos := g_pos + 8;                           -- 64-bit
+            WHEN 2 THEN l_len := read_varint;                         -- length-delimited
+                        g_pos := g_pos + l_len;
+            WHEN 5 THEN g_pos := g_pos + 4;                           -- 32-bit
+            ELSE RAISE_APPLICATION_ERROR(-20802, 'Unsupported protobuf wire type ' || p_wire || ' at byte ' || g_pos);
+          END CASE;
+        END skip_field;
+
+        -- Next field before p_end: field number and wire type; FALSE at the end of the (embedded) message
+        FUNCTION next_field (p_end IN PLS_INTEGER, p_field OUT PLS_INTEGER, p_wire OUT PLS_INTEGER) RETURN BOOLEAN IS
+          l_key NUMBER;
+        BEGIN
+          IF g_pos >= p_end THEN
+            RETURN FALSE;
+          END IF;
+          l_key   := read_varint;
+          p_field := TRUNC(l_key / 8);
+          p_wire  := MOD(l_key, 8);
+          RETURN TRUE;
+        END next_field;
+
+        -- End position of the embedded message that starts here (its length comes first)
+        FUNCTION sub_end RETURN PLS_INTEGER IS
+          l_len NUMBER := read_varint;
+        BEGIN
+          RETURN g_pos + l_len;
+        END sub_end;
+
+        ------------------------------------------------------------------------------------------------
+        -- GTFS-Realtime messages (field numbers: https://gtfs.org/documentation/realtime/proto/)
+        -- Output: Protocol Buffers JSON mapping (camelCase names, uint64 as string)
+        ------------------------------------------------------------------------------------------------
+
+        -- TripDescriptor
+        FUNCTION decode_trip (p_end IN PLS_INTEGER) RETURN JSON_OBJECT_T IS
+          l_obj   JSON_OBJECT_T := JSON_OBJECT_T();
+          l_field PLS_INTEGER;
+          l_wire  PLS_INTEGER;
+        BEGIN
+          WHILE next_field(p_end, l_field, l_wire) LOOP
+            CASE
+              WHEN l_field = 1 AND l_wire = 2 THEN l_obj.put('tripId',      read_string);
+              WHEN l_field = 2 AND l_wire = 2 THEN l_obj.put('startTime',   read_string);
+              WHEN l_field = 3 AND l_wire = 2 THEN l_obj.put('startDate',   read_string);
+              WHEN l_field = 5 AND l_wire = 2 THEN l_obj.put('routeId',     read_string);
+              WHEN l_field = 6 AND l_wire = 0 THEN l_obj.put('directionId', read_varint);
+              ELSE skip_field(l_wire);
+            END CASE;
+          END LOOP;
+          RETURN l_obj;
+        END decode_trip;
+
+        -- Position
+        FUNCTION decode_position (p_end IN PLS_INTEGER) RETURN JSON_OBJECT_T IS
+          l_obj   JSON_OBJECT_T := JSON_OBJECT_T();
+          l_field PLS_INTEGER;
+          l_wire  PLS_INTEGER;
+        BEGIN
+          WHILE next_field(p_end, l_field, l_wire) LOOP
+            CASE
+              WHEN l_field = 1 AND l_wire = 5 THEN l_obj.put('latitude',  read_float);
+              WHEN l_field = 2 AND l_wire = 5 THEN l_obj.put('longitude', read_float);
+              WHEN l_field = 3 AND l_wire = 5 THEN l_obj.put('bearing',   read_float);
+              WHEN l_field = 5 AND l_wire = 5 THEN l_obj.put('speed',     read_float);
+              ELSE skip_field(l_wire);
+            END CASE;
+          END LOOP;
+          RETURN l_obj;
+        END decode_position;
+
+        -- VehicleDescriptor
+        FUNCTION decode_descriptor (p_end IN PLS_INTEGER) RETURN JSON_OBJECT_T IS
+          l_obj   JSON_OBJECT_T := JSON_OBJECT_T();
+          l_field PLS_INTEGER;
+          l_wire  PLS_INTEGER;
+        BEGIN
+          WHILE next_field(p_end, l_field, l_wire) LOOP
+            CASE
+              WHEN l_field = 1 AND l_wire = 2 THEN l_obj.put('id',           read_string);
+              WHEN l_field = 2 AND l_wire = 2 THEN l_obj.put('label',        read_string);
+              WHEN l_field = 3 AND l_wire = 2 THEN l_obj.put('licensePlate', read_string);
+              ELSE skip_field(l_wire);
+            END CASE;
+          END LOOP;
+          RETURN l_obj;
+        END decode_descriptor;
+
+        -- VehiclePosition
+        FUNCTION decode_vehicle (p_end IN PLS_INTEGER) RETURN JSON_OBJECT_T IS
+          l_obj   JSON_OBJECT_T := JSON_OBJECT_T();
+          l_field PLS_INTEGER;
+          l_wire  PLS_INTEGER;
+        BEGIN
+          WHILE next_field(p_end, l_field, l_wire) LOOP
+            CASE
+              WHEN l_field = 1 AND l_wire = 2 THEN l_obj.put('trip',                decode_trip(sub_end));
+              WHEN l_field = 2 AND l_wire = 2 THEN l_obj.put('position',            decode_position(sub_end));
+              WHEN l_field = 3 AND l_wire = 0 THEN l_obj.put('currentStopSequence', read_varint);
+              WHEN l_field = 5 AND l_wire = 0 THEN l_obj.put('timestamp',           TO_CHAR(read_varint));
+              WHEN l_field = 7 AND l_wire = 2 THEN l_obj.put('stopId',              read_string);
+              WHEN l_field = 8 AND l_wire = 2 THEN l_obj.put('vehicle',             decode_descriptor(sub_end));
+              ELSE skip_field(l_wire);
+            END CASE;
+          END LOOP;
+          RETURN l_obj;
+        END decode_vehicle;
+
+        -- FeedEntity: only entities with a vehicle position; trip updates and alerts are skipped (NULL)
+        FUNCTION decode_entity (p_end IN PLS_INTEGER) RETURN JSON_OBJECT_T IS
+          l_obj     JSON_OBJECT_T;
+          l_id      VARCHAR2(200);
+          l_vehicle JSON_OBJECT_T;
+          l_field   PLS_INTEGER;
+          l_wire    PLS_INTEGER;
+        BEGIN
+          WHILE next_field(p_end, l_field, l_wire) LOOP
+            CASE
+              WHEN l_field = 1 AND l_wire = 2 THEN l_id      := read_string;
+              WHEN l_field = 4 AND l_wire = 2 THEN l_vehicle := decode_vehicle(sub_end);
+              ELSE skip_field(l_wire);
+            END CASE;
+          END LOOP;
+          IF l_vehicle IS NOT NULL THEN
+            l_obj := JSON_OBJECT_T();
+            l_obj.put('id', l_id);
+            l_obj.put('vehicle', l_vehicle);
+          END IF;
+          RETURN l_obj;
+        END decode_entity;
+
+        -- FeedHeader; p_epoch returns the header timestamp (POSIX seconds, UTC)
+        FUNCTION decode_header (p_end IN PLS_INTEGER, p_epoch OUT NUMBER) RETURN JSON_OBJECT_T IS
+          l_obj   JSON_OBJECT_T := JSON_OBJECT_T();
+          l_field PLS_INTEGER;
+          l_wire  PLS_INTEGER;
+        BEGIN
+          WHILE next_field(p_end, l_field, l_wire) LOOP
+            CASE
+              WHEN l_field = 1 AND l_wire = 2 THEN
+                l_obj.put('gtfsRealtimeVersion', read_string);
+              WHEN l_field = 2 AND l_wire = 0 THEN
+                l_obj.put('incrementality', CASE read_varint WHEN 0 THEN 'FULL_DATASET' ELSE 'DIFFERENTIAL' END);
+              WHEN l_field = 3 AND l_wire = 0 THEN
+                p_epoch := read_varint;
+                l_obj.put('timestamp', TO_CHAR(p_epoch));
+              ELSE
+                skip_field(l_wire);
+            END CASE;
+          END LOOP;
+          RETURN l_obj;
+        END decode_header;
+
+        -- FeedMessage
+        PROCEDURE decode (p_feed IN BLOB, p_json OUT CLOB, p_epoch OUT NUMBER) IS
+          l_root     JSON_OBJECT_T := JSON_OBJECT_T();
+          l_entities JSON_ARRAY_T  := JSON_ARRAY_T();
+          l_entity   JSON_OBJECT_T;
+          l_end      PLS_INTEGER;
+          l_field    PLS_INTEGER;
+          l_wire     PLS_INTEGER;
+        BEGIN
+          g_msg := p_feed;
+          g_pos := 1;
+          l_end := DBMS_LOB.GETLENGTH(p_feed) + 1;
+          WHILE next_field(l_end, l_field, l_wire) LOOP
+            CASE
+              WHEN l_field = 1 AND l_wire = 2 THEN
+                l_root.put('header', decode_header(sub_end, p_epoch));
+              WHEN l_field = 2 AND l_wire = 2 THEN
+                l_entity := decode_entity(sub_end);
+                IF l_entity IS NOT NULL THEN
+                  l_entities.append(l_entity);
+                END IF;
+              ELSE
+                skip_field(l_wire);
+            END CASE;
+          END LOOP;
+          l_root.put('entity', l_entities);
+          p_json := l_root.to_clob;
+          IF DBMS_LOB.ISTEMPORARY(g_msg) = 1 THEN
+            DBMS_LOB.FREETEMPORARY(g_msg);                            -- the copy made by the assignment above
+          END IF;
+        END decode;
+
+        ------------------------------------------------------------------------------------------------
+        -- Public
+        ------------------------------------------------------------------------------------------------
+
+        FUNCTION fetch_feed (p_url IN VARCHAR2 DEFAULT c_feed_url) RETURN BLOB IS
+          l_req  UTL_HTTP.REQ;
+          l_resp UTL_HTTP.RESP;
+          l_raw  RAW(32767);
+          l_feed BLOB;
+        BEGIN
+          UTL_HTTP.SET_DETAILED_EXCP_SUPPORT(TRUE);                   -- raises END_OF_BODY at the end of the response
+          UTL_HTTP.SET_TRANSFER_TIMEOUT(10);                          -- seconds; less than the 15-second poll interval
+          l_req := UTL_HTTP.BEGIN_REQUEST(p_url, 'GET', 'HTTP/1.1');
+          UTL_HTTP.SET_HEADER(l_req, 'Accept', 'application/x-protobuf');
+          UTL_HTTP.SET_HEADER(l_req, 'User-Agent', 'zet-feed-loader (Oracle AI Database)');
+          l_resp := UTL_HTTP.GET_RESPONSE(l_req);
+          IF l_resp.status_code <> UTL_HTTP.HTTP_OK THEN
+            RAISE_APPLICATION_ERROR(-20801, 'Feed request failed: HTTP ' || l_resp.status_code || ' ' || l_resp.reason_phrase);
+          END IF;
+          DBMS_LOB.CREATETEMPORARY(l_feed, TRUE);
+          BEGIN
+            LOOP
+              UTL_HTTP.READ_RAW(l_resp, l_raw, 32767);
+              DBMS_LOB.WRITEAPPEND(l_feed, UTL_RAW.LENGTH(l_raw), l_raw);
+            END LOOP;
+          EXCEPTION
+            WHEN UTL_HTTP.END_OF_BODY THEN
+              UTL_HTTP.END_RESPONSE(l_resp);
+          END;
+          RETURN l_feed;
+        EXCEPTION
+          WHEN OTHERS THEN
+            BEGIN
+              UTL_HTTP.END_RESPONSE(l_resp);                          -- close the connection if still open
+            EXCEPTION
+              WHEN OTHERS THEN NULL;
+            END;
+            RAISE;
+        END fetch_feed;
+
+        FUNCTION to_json (p_feed IN BLOB) RETURN CLOB IS
+          l_json  CLOB;
+          l_epoch NUMBER;
+        BEGIN
+          decode(p_feed, l_json, l_epoch);
+          RETURN l_json;
+        END to_json;
+
+        FUNCTION poll (p_url IN VARCHAR2 DEFAULT c_feed_url) RETURN NUMBER IS
+          l_feed    BLOB;
+          l_json    CLOB;
+          l_epoch   NUMBER;
+          l_feed_ts TIMESTAMP;
+          l_loaded  PLS_INTEGER;
+          l_feed_id NUMBER;
+          l_rows    NUMBER := 0;
+        BEGIN
+          l_feed := fetch_feed(p_url);
+          decode(l_feed, l_json, l_epoch);
+          IF l_epoch IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20803, 'Feed message without header timestamp');
+          END IF;
+          l_feed_ts := TIMESTAMP '1970-01-01 00:00:00' + NUMTODSINTERVAL(l_epoch, 'SECOND');
+
+          -- Skip a message that was loaded before (the feed hasn't changed since the last poll)
+          SELECT COUNT(*)
+          INTO   l_loaded
+          FROM   zet_feed_raw
+          WHERE  received_date >= CAST(SYS_EXTRACT_UTC(SYSTIMESTAMP) - INTERVAL '1' HOUR AS DATE)   -- recent partitions only
+          AND    feed_ts = l_feed_ts;
+
+          IF l_loaded = 0 THEN
+            zet_stream.ingest(p_payload => l_json, p_feed_id => l_feed_id, p_rows => l_rows);
+          END IF;
+
+          DBMS_LOB.FREETEMPORARY(l_feed);
+          DBMS_LOB.FREETEMPORARY(l_json);
+          RETURN l_rows;
+        END poll;
+
+      END zet_feed;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Test 1: fetch and decode one message in PL/SQL, without storing it
+
+      --
+
+
+      DECLARE
+        l_doc      JSON_OBJECT_T := JSON_OBJECT_T.parse(zet_feed.to_json(zet_feed.fetch_feed));
+        l_entities JSON_ARRAY_T  := l_doc.get_array('entity');
+      BEGIN
+        DBMS_OUTPUT.PUT_LINE('header:   ' || l_doc.get_object('header').to_string);
+        DBMS_OUTPUT.PUT_LINE('vehicles: ' || l_entities.get_size);
+        DBMS_OUTPUT.PUT_LINE('first:    ' || l_entities.get(0).to_string);
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Test 2: one poll (fetch, decode, ingest). Run it again right away: an
+      unchanged feed adds 0 positions.
+
+      --
+
+
+      DECLARE
+        l_rows NUMBER;
+      BEGIN
+        l_rows := zet_feed.poll;
+        COMMIT;
+        DBMS_OUTPUT.PUT_LINE('new positions: ' || l_rows);
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Loader job: poll the feed every 15 seconds (5,760 runs a day, so only
+      failed runs are logged)
+
+      --
+
+
+      BEGIN
+        DBMS_SCHEDULER.CREATE_JOB(
+          job_name        => 'ZET_FEED_JOB',
+          job_type        => 'PLSQL_BLOCK',
+          job_action      => 'DECLARE l_rows NUMBER; BEGIN l_rows := zet_feed.poll; COMMIT; END;',
+          start_date      => SYSTIMESTAMP,
+          repeat_interval => 'FREQ=SECONDLY;INTERVAL=15',
+          enabled         => FALSE,
+          comments        => 'Load the ZET GTFS-Realtime feed every 15 seconds'
+        );
+        DBMS_SCHEDULER.SET_ATTRIBUTE(
+          name      => 'ZET_FEED_JOB',
+          attribute => 'logging_level',
+          value     => DBMS_SCHEDULER.LOGGING_FAILED_RUNS
+        );
+        DBMS_SCHEDULER.ENABLE('ZET_FEED_JOB');
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Monitor the loader job: state, run counts, last and next run (Zagreb
+      time)
+
+      --
+
+
+      SELECT
+        job_name,
+        state,
+        enabled,
+        run_count,
+        failure_count,
+        CAST(last_start_date AT TIME ZONE 'Europe/Zagreb' AS TIMESTAMP(0)) AS last_start_local,
+        last_run_duration,
+        CAST(next_run_date AT TIME ZONE 'Europe/Zagreb' AS TIMESTAMP(0)) AS next_run_local
+      FROM
+        user_scheduler_jobs
+      WHERE
+        job_name = 'ZET_FEED_JOB';
+
+      --
+
+      -- Failed runs of the last 24 hours, newest first, with error code and
+      message (successful runs are not logged)
+
+      --
+
+
+      SELECT
+        log_id,
+        CAST(actual_start_date AT TIME ZONE 'Europe/Zagreb' AS TIMESTAMP(0)) AS started_local,
+        run_duration,
+        status,
+        error#,
+        errors
+      FROM
+        user_scheduler_job_run_details
+      WHERE
+        job_name = 'ZET_FEED_JOB'
+        AND log_date > SYSTIMESTAMP - INTERVAL '24' HOUR
+      ORDER BY
+        log_date DESC;
+
+      --
+
+      -- Is data arriving? Feed messages and positions of the last 10 minutes
+
+      --
+
+
+      SELECT
+        COUNT(*) AS feed_messages,
+        CAST(FROM_TZ(MAX(feed_ts), 'UTC') AT TIME ZONE 'Europe/Zagreb' AS TIMESTAMP(0)) AS last_feed_local
+      FROM
+        zet_feed_raw
+      WHERE
+        received_date >= CAST(SYS_EXTRACT_UTC(SYSTIMESTAMP) - INTERVAL '10' MINUTE AS DATE);
+
+      SELECT
+        COUNT(*) AS positions,
+        COUNT(DISTINCT vehicle_id) AS vehicles,
+        COUNT(DISTINCT route_id) AS routes
+      FROM
+        zet_vehicle_positions
+      WHERE
+        observed_date >= CAST(SYS_EXTRACT_UTC(SYSTIMESTAMP) - INTERVAL '10' MINUTE AS DATE)
+        AND observed_at >= SYS_EXTRACT_UTC(SYSTIMESTAMP) - INTERVAL '10' MINUTE;
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      --
+
+      -- Disable the loader job (uncomment to run)
+
+      -- The job stays; DBMS_SCHEDULER.ENABLE('ZET_FEED_JOB') starts polling
+      again.
+
+      -- force => TRUE: a poll in progress is allowed to finish, no further
+      polls start.
+
+      --
+
+
+      -- BEGIN
+
+      --   DBMS_SCHEDULER.DISABLE(name => 'ZET_FEED_JOB', force => TRUE);
+
+      -- END;
+
+      -- /
+    languageId: oracle-sql
+  - kind: 1
+    value: |-
+      ## 14. Map with MapLibre
+
+      [`demo1_zet_map.html`](demo1_zet_map.html) shows the three tile endpoints from section 11 on a map with [MapLibre GL JS](https://maplibre.org/maplibre-gl-js/docs/), styled like the hook slides:
+
+      | Layer | Endpoint | Source layer | Style |
+      |---|---|---|---|
+      | Tram 6 track | `/zet/vt/tram-lines/{z}/{x}/{y}` | `tram_lines` | Light blue line (`#80B3C5`) |
+      | Stops A–D | `/zet/vt/tram-stations/{z}/{x}/{y}` | `tram_stations` | White circle with the `tram-station` icon (`media/large/tram-station.png`), the stop code, and the stop name from zoom 15 |
+      | Trams | `/zet/vt/vehicles/{z}/{x}/{y}` | `vehicles` | Teal circle (`#00688C`) with a white outline: positions of the last 2 minutes, older ones fade (`AGE_S`), reloaded every 10 seconds |
+
+      The basemap is the dark style of [OpenFreeMap](https://openfreemap.org/) (OpenStreetMap data, no API key), recoloured to the Redwood dark palette. Oracle's own `osm-dark-matter` style has the same layout, but its tiles need an Oracle Maps token.
+
+      **Show the map:**
+      1. In the `10_HrOUG` folder, start a local web server. The page loads the stop icon from `../media`, which browsers block for pages opened directly from disk. `--bind 127.0.0.1` keeps the server, and the files in the folder, private to your machine:
+         ```bash
+         python -m http.server 8000 --bind 127.0.0.1
+         ```
+      2. Open `http://localhost:8000/scripts/demo1_zet_map.html?ords=https://<adb-host>/ords/<schema>`. Instead of `?ords=`, you can set `DEFAULT_ORDS_BASE` in the file. `&refresh=5` reloads the trams every 5 seconds instead of 10.
+      3. Check the status line at the bottom of the panel:
+         * **"N trams with positions in the last 2 minutes"**: the map is live.
+         * **"No tram positions in the last 2 minutes"**: the tiles work, but no new positions arrived. The tram layer shows live data only, so the loader job from section 13 must be running. The July data from section 7.2 is older than 2 minutes and doesn't appear; replaying it needs an "as of" time for `ZET_TILES.VEHICLES`.
+         * **"Tile request to ORDS failed"**: check the URL and open the browser console. If it reports a CORS error, allow the page's origin for the tile module:
+           ```sql
+           BEGIN
+             ORDS.SET_MODULE_ORIGINS_ALLOWED(
+               p_module_name     => 'zet.tiles',
+               p_origins_allowed => 'http://localhost:8000');
+             COMMIT;
+           END;
+           /
+           ```
+      4. Click a tram or a stop for details. The URL hash (`#zoom/lat/lon`) keeps the current view, so a reload or a bookmark returns to it.
+
+      To test one tile without the map (stop A, zoom 14):
+
+      ```bash
+      curl -s -o tile.pbf -w "%{http_code} %{content_type} %{size_download} bytes\n" https://<adb-host>/ords/<schema>/zet/vt/tram-stations/14/8919/5841
+      ```
+
+      References:
+      * [ORDS.SET_MODULE_ORIGINS_ALLOWED](https://docs.oracle.com/en/database/oracle/oracle-rest-data-services/25.4/orddg/ORDS-reference.html)
+      * [MapLibre GL JS: vector sources](https://maplibre.org/maplibre-style-spec/sources/#vector)
+      * [OpenFreeMap](https://openfreemap.org/)
+    languageId: markdown
+  - kind: 1
+    value: >
+      # Demo End
+
+
+      Next steps:
+
+      * Recording for the replay: `ZET_FEED_JOB` (section 13) keeps every feed
+      message in `ZET_FEED_RAW`. Keep a peak-hour recording beyond the 24-hour
+      purge of section 12.
+    languageId: markdown

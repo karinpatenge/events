@@ -1,0 +1,64 @@
+--  DEFINE MODULE
+BEGIN
+    ORDS.DEFINE_MODULE(
+        p_module_name => 'cities',
+        p_base_path => '/cities/',
+        p_items_per_page=> 25,
+        p_status => 'PUBLISHED',
+        p_comments=> ''
+    );
+    COMMIT;
+END;
+/
+
+--  DEFINE TEMPLATE
+BEGIN
+    ORDS.DEFINE_TEMPLATE(
+        p_module_name => 'cities',
+        p_pattern => 'city/:id',
+        p_priority => 0,
+        p_etag_type => 'HASH',
+        p_comments => ''
+    );
+    COMMIT;
+END;
+/
+
+-- DEFINE HANDLER
+-- Use "{}GEO" in the source to return GeoJSON
+BEGIN
+    ORDS.DEFINE_HANDLER(
+        p_module_name => 'cities',
+        p_pattern => 'city/:id',
+        p_method => 'GET',
+        p_source_type => ords.source_type_collection_item,
+        p_source => 'select id, city, lon, lat, admin_name, population, sdo_util.to_geojson(location) "{}GEO" from cities_rou where id = :id',
+        p_items_per_page => 25,
+        p_comments => ''
+    );
+    COMMIT;
+END;
+/
+
+Request:
+https://ij1tyzir3wpwlpe-kpadw23ai.adb.eu-frankfurt-1.oraclecloudapps.com/ords/roouguser/cities/city/2
+
+Response:
+{
+  "id": 2,
+  "city": "Caracal",
+  "lon": 24.3472,
+  "lat": 44.1125,
+  "admin_name": "Olt",
+  "population": 27403,
+  "geo": {
+    "type": "Point",
+    "coordinates": [24.3472, 44.1125]
+  },
+  "links": [
+    {
+      "rel": "collection",
+      "href": "https://ij1tyzir3wpwlpe-kpadw23ai.adb.eu-frankfurt-1.oraclecloudapps.com/ords/roouguser/cities/city/"
+    }
+  ]
+}

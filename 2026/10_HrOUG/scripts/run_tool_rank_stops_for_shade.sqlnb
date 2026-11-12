@@ -1,0 +1,179 @@
+cells:
+  - kind: 1
+    value: |-
+      # Test and Demo the Select AI Agent Tool RANK_STOPS_FOR_SHADE
+
+      **HrOUG 2026 · Spatial Meets AI · Demo 3**
+
+      Author: Karin Patenge · October 2026
+
+      **Prerequisites**
+
+      * Connect as the demo schema `HROUG2026`.
+      * `create_tool_rank_stops_for_shade.sqlnb` has created the function, the tool and the agent team.
+      * The AI profile `OCI_GENAI_PROFILE` exists (`spatial_using_select_ai.sql`, part 2).
+
+      **Order on stage:** Select AI with the profile first (section 1), then the agent team (section 3). After `SET_TEAM`, only `SELECT AI AGENT` works in the session; `SELECT AI SHOWSQL`, `RUNSQL` or `NARRATE` fail with `ORA-20046` ("not supported for current session") until `DBMS_CLOUD_AI.SET_PROFILE` is called again (section 4).
+
+      **No question mark at the end of a SELECT AI prompt.** The prompt is not quoted, so JDBC clients (SQLcl, SQL Developer) take `?` as a bind placeholder and fail with `ORA-17041` (missing IN or OUT parameter).
+
+      Documentation: [Select AI Agent](https://docs.oracle.com/en-us/iaas/autonomous-database-serverless/doc/select-ai-agent1.html) · File encoding: UTF-8 (Croatian diacritics).
+    languageId: markdown
+  - kind: 1
+    value: >-
+      ## Table of Contents
+
+
+      1. Set the AI profile for this session and ask in natural language
+      (NL2SQL)
+
+      2. Test the function behind the tool
+
+      3. Run the agent team in this session (SELECT AI AGENT only from here on)
+
+      4. Back to SELECT AI with the profile in the same session (clears the
+      team; GET_TEAM returns NULL)
+    languageId: markdown
+  - kind: 1
+    value: "## 1. Set the AI profile for this session and ask in natural language
+      (NL2SQL)"
+    languageId: markdown
+  - kind: 2
+    value: |
+      BEGIN
+        DBMS_CLOUD_AI.SET_PROFILE(profile_name => 'OCI_GENAI_PROFILE');
+      END;
+      /
+    languageId: oracle-sql
+  - kind: 2
+    value: "SELECT AI SHOWSQL show the 10 ZET stops with the most weekday
+      departures;\r\n"
+    languageId: oracle-sql
+  - kind: 1
+    value: "## 2. Test the function behind the tool"
+    languageId: markdown
+  - kind: 2
+    value: >
+      -- Expected: TREES first with the largest cooling (Odvojak Reber, about
+      2.6 °C),
+
+      -- then SHELTER with the busiest heat-island stops where trees cool less
+      than 1 °C
+
+      -- (Glavni kolodvor, Trg bana J. Jelačića, Zapruđe: each merged from 2 or
+      3 stations)
+
+      SELECT rank_stops_for_shade(tree_stops => 10, shelter_stops => 5) AS
+      result FROM dual;
+    languageId: oracle-sql
+  - kind: 2
+    value: |
+      -- The same answer as rows
+      SELECT
+        r.*
+      FROM
+        JSON_TABLE(
+          rank_stops_for_shade(tree_stops => 10, shelter_stops => 5),
+          '$.recommendations[*]'
+          COLUMNS (
+            action              VARCHAR2(10)  PATH '$.action',
+            action_rank         NUMBER        PATH '$.rank',
+            stop_name           VARCHAR2(100) PATH '$.stop_name',
+            stop_ids            VARCHAR2(100) PATH '$.stop_ids',
+            stations            NUMBER        PATH '$.stations',
+            district            VARCHAR2(100) PATH '$.district',
+            vehicles            VARCHAR2(30)  PATH '$.vehicles',
+            weekday_departures  NUMBER        PATH '$.weekday_departures',
+            surface_temp_c      NUMBER        PATH '$.surface_temp_c',
+            tree_cooling_c      NUMBER        PATH '$.tree_cooling_c',
+            reason              VARCHAR2(200) PATH '$.reason'
+          )
+        ) r;
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      -- Merged stations: expected Glavni kolodvor once, 2 stations (109, 110),
+      BUS/TRAM, 2,336 departures
+
+      SELECT
+        r.*
+      FROM
+        JSON_TABLE(
+          rank_stops_for_shade(tree_stops => 0, shelter_stops => 100),
+          '$.recommendations[*]'
+          COLUMNS (
+            stop_name           VARCHAR2(100) PATH '$.stop_name',
+            stop_ids            VARCHAR2(100) PATH '$.stop_ids',
+            stations            NUMBER        PATH '$.stations',
+            vehicles            VARCHAR2(30)  PATH '$.vehicles',
+            weekday_departures  NUMBER        PATH '$.weekday_departures'
+          )
+        ) r
+      WHERE
+        r.stop_name = 'Glavni kolodvor';
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      -- Filters: both Novi Zagreb districts, tram stops only (district matching
+      ignores case and č, ć, ž, š, đ)
+
+      SELECT rank_stops_for_shade(tree_stops => 3, shelter_stops => 3, district
+      => 'novi zagreb', vehicle => 'tram') AS result FROM dual;
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      -- Invalid input: expected {"error":"Ask for at least one stop: ..."}
+
+      SELECT rank_stops_for_shade(tree_stops => 0, shelter_stops => 0) AS result
+      FROM dual;
+    languageId: oracle-sql
+  - kind: 1
+    value: "## 3. Run the agent team in this session (SELECT AI AGENT only from here
+      on)"
+    languageId: markdown
+  - kind: 2
+    value: "EXEC DBMS_CLOUD_AI_AGENT.SET_TEAM('ZG_SHADE_TEAM');\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: "SELECT AI AGENT I have a budget for 20 new shelters and for planting
+      trees around 10 stops. Where should they go;\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      -- In Croatian:
+
+      SELECT AI AGENT Imam budžet za 20 novih nadstrešnica i za sadnju drveća
+      oko 10 stajališta. Gdje ih postaviti;
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      -- The same from PL/SQL (also works where SELECT AI is not available, for
+      example Database Actions).
+
+      -- Here the prompt is a string literal, so a question mark is fine.
+
+      SET SERVEROUTPUT ON
+    languageId: oracle-sql
+  - kind: 2
+    value: >
+      DECLARE
+        l_answer CLOB;
+      BEGIN
+        l_answer := DBMS_CLOUD_AI_AGENT.RUN_TEAM(
+                      team_name   => 'ZG_SHADE_TEAM',
+                      user_prompt => 'I have a budget for 20 new shelters and for planting trees around 10 stops. Where should they go?');
+        DBMS_OUTPUT.PUT_LINE(l_answer);
+      END;
+
+      /
+    languageId: oracle-sql
+  - kind: 1
+    value: "## 4. Back to SELECT AI with the profile in the same session (clears the
+      team; GET_TEAM returns NULL)"
+    languageId: markdown
+  - kind: 2
+    value: "EXEC DBMS_CLOUD_AI.SET_PROFILE(profile_name => 'OCI_GENAI_PROFILE');\r\n"
+    languageId: oracle-sql
+  - kind: 2
+    value: "SELECT DBMS_CLOUD_AI_AGENT.GET_TEAM() AS current_team FROM dual;\r\n"
+    languageId: oracle-sql

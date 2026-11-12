@@ -1,0 +1,59 @@
+app EMEA-COMMUNITY-TOUR-2026-FROM-IOT-DATA-TO-INTELLIGENT-ACTION (
+    name: EMEA Community Tour 2026 - From IoT Data to Intelligent Action
+    logo {
+        type: image
+        imageUrl: http://ogbemea.com/wp-content/uploads/2026/04/octemea26.png
+    }
+    navigation {
+        homeUrl: {
+            page: 1
+        }
+        loginUrl: {
+            page: LOGIN
+        }
+    }
+    navigationMenu {
+        listTemplate: @/side-navigation-menu
+        templateOptions: [
+            #DEFAULT#
+            js-defaultCollapsed
+            js-navCollapsed--hidden
+            t-TreeNav--styleA
+        ]
+        list: @navigation-menu
+    }
+    navigationBar {
+        list: @navigation-bar
+        listTemplate: @/navigation-bar
+        templateOptions: #DEFAULT#
+    }
+    userInterface {
+        currentTheme: @universal-theme
+        globalPage: 0
+        addBuiltWithApexToFooter: false
+    }
+    appFormatMasks {
+        date: DS
+        timestamp: DS
+        timestampTimeZone: DS
+    }
+    authentication {
+        scheme: @oracle-apex-accounts
+        publicUser: APEX_PUBLIC_USER
+    }
+    sessionStateProtection {
+        checksumSalt: EEC2EC94979CBDC929E7905695BFCF81BB91E57842A53163D0F7DDCA5F9FE17D
+    }
+    runtime {
+        allowFeedback: true
+        compatibilityMode: 24.2
+    }
+
+    substitution APP_NAME (
+        value {
+            staticValue: EMEA Community Tour 2026 - From IoT Data to Intelligent Action
+        }
+    )
+
+)
+
