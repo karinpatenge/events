@@ -1,0 +1,28 @@
+genAIService oci_genai (
+    name: OCI GenAI Service
+    provider: ociGenAI
+    endpointUrl {
+        url: https://inference.generativeai.eu-frankfurt-1.oci.oraclecloud.com
+    }
+    authentication {
+        credentials: @credentials-for-oci-genai
+    }
+    additionalData {
+        attributes:
+            ```
+            {
+              "compartmentId" : "ocid1.tenancy.oc1..aaaaaaaaj4ccqe763dizkrcdbs5x7ufvmmojd24mb6utvkymyo4xwxyv3gfa",
+              "servingMode" :
+              {
+                "servingType" : "ON_DEMAND",
+                "modelId" : "meta.llama-3.3-70b-instruct"
+              }
+            }
+            ```
+    }
+    appBuilder {
+        usedByAppBuilder: true
+        defaultForNewApps: true
+    }
+)
+
