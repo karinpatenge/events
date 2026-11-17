@@ -1,0 +1,25 @@
+{
+  "displayName": "dh-pump-station-adapter",
+  "description": "Maps pump station JSON payloads to the PumpStation model",
+  "inboundEnvelope": {
+    "referenceEndpoint": "/dh/telemetry",
+    "envelopeMapping": { "timeObserved": "$.time" },
+    "referencePayload": {
+      "dataFormat": "JSON",
+      "data": { "time": "2026-11-05T07:00:00.000000Z", "vibration": 2.1, "bearing_tmp": 52.4, "power": 251.0, "flow": 930.0, "pressure": 9.6 }
+    }
+  },
+  "inboundRoutes": [
+    {
+      "condition": "*",
+      "description": "Pump station telemetry",
+      "payloadMapping": {
+        "$.vibration": "$.vibration",
+        "$.bearing_tmp": "$.bearing_tmp",
+        "$.power": "$.power",
+        "$.flow": "$.flow",
+        "$.pressure": "$.pressure"
+      }
+    }
+  ]
+}
