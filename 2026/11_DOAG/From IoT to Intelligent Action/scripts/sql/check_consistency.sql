@@ -18,7 +18,8 @@
 --   W  work orders, APEX workflows and tasks belong together: no open work
 --      order without a running workflow, no running workflow or open task
 --      without its work order, no second workflow per work order, every work
---      order closed by its workflow has its maintenance entry
+--      order closed by its workflow has its maintenance entry, no running
+--      workflow that stopped between two steps (W8b)
 -- The J, S and stale-finding checks need the job running; right after a
 -- start, wait a minute. Everything is read in one statement, so the checks
 -- see one consistent state. What to do on FAIL: see the end of this file.
@@ -160,6 +161,15 @@ checks AS (
   WHERE  w.status = 'DONE' AND w.workflow_id IS NOT NULL
   AND    NOT EXISTS (SELECT 1 FROM dh_maintenance m WHERE m.maint_id = 'W-' || w.wo_id)
   UNION ALL
+  SELECT 'W8b', 'Running workflows stalled: no open step for more than 3 min after the last one ended', '0',
+         TO_CHAR(COUNT(*)) || NVL2(MAX(f.wo_id), ' (e.g. work order ' || MAX(f.wo_id) || ')', NULL)
+  FROM   wf f
+  WHERE  f.is_open = 'Y'
+  AND    NOT EXISTS (SELECT 1 FROM apex_workflow_activities a
+                     WHERE  a.workflow_id = f.workflow_id AND a.state <> 'COMPLETED')
+  AND    (SELECT MAX(a.end_time) FROM apex_workflow_activities a WHERE a.workflow_id = f.workflow_id)
+           < SYSTIMESTAMP - INTERVAL '3' MINUTE      -- shorter gaps: APEX continues late, not never
+  UNION ALL
   SELECT 'W9', 'Open work orders without a workflow (AI agent; started on page 6)', 'info',
          TO_CHAR(COUNT(*)) || NVL2(MAX(w.wo_id), ' (e.g. ' || MAX(w.wo_id) || ')', NULL)
   FROM   wo w WHERE w.is_open = 'Y' AND w.workflow_id IS NULL
@@ -180,5 +190,6 @@ ORDER  BY INSTR('JSHW', SUBSTR(id, 1, 1)), id;   -- job, simulation, health, wor
 --   S4              SELECT dh_device_sim.status FROM dual; @sql/iot_publish.sql off if the
 --                   IoT Platform is not reachable
 --   H1-H3           EXEC dh_job_tick; if it stays: @sql/demo_state.sql
+--   W8b             @sql/wo_recover.sql <work order number> for each stalled work order
 --   W1-W8           @sql/apex_cleanup.sql (ends all open work-order workflows and tasks),
 --                   or @sql/demo_state.sql for a full reset

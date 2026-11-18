@@ -2,7 +2,7 @@
 -- 07_agent_api.sql
 --
 -- Author:      Karin Patenge
--- Last update: 2026-11-12
+-- Last update: 2026-11-18
 --
 -- Graph-powered tools for AI agents and for the APEX app.
 --
@@ -19,12 +19,53 @@
 -- COLUMNS output, outside the GRAPH_TABLE operator.
 -- =============================================================================
 
+-- -----------------------------------------------------------------------------
+-- Open findings with the limit they are compared with and the deviation, so
+-- that the agents never have to calculate. Used by active_anomalies and by
+-- root_cause (findings of the root-cause asset).
+--   limit_type     alarm_high | alarm_low | warning_high | warning_low (THRESHOLD:
+--                  the limit crossed), alarm_high (TREND: the limit it heads for),
+--                  mean_7d (ZSCORE: the 7-day mean); NULL for FLATLINE, NO_DATA
+--   deviation      observed_value - limit_value, unit of the metric (negative: below)
+--   deviation_pct  deviation in % of the limit
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE VIEW dh_findings_v AS
+SELECT x.*,
+       ROUND(x.observed_value - x.limit_value, 2) AS deviation,
+       CASE WHEN x.limit_value <> 0
+            THEN ROUND((x.observed_value - x.limit_value) / ABS(x.limit_value) * 100, 1) END AS deviation_pct
+FROM  (SELECT y.*,
+              DECODE(y.limit_type, 'alarm_high',   y.alarm_high, 'alarm_low',   y.alarm_low,
+                                   'warning_high', y.warn_high,  'warning_low', y.warn_low,
+                                   'mean_7d',      y.expected_value) AS limit_value
+       FROM  (SELECT an.anomaly_id, an.asset_id, a.name AS asset_name, a.asset_type, a.district,
+                     an.metric, m.display_name AS metric_name, an.anomaly_type, an.severity,
+                     DECODE(an.severity, 'ALARM', 3, 'WARNING', 2, 1) AS sev,
+                     an.observed_value, an.expected_value, an.score, an.hours_to_alarm,
+                     an.details, an.detected_at,
+                     m.unit, m.normal_value, m.alarm_high, m.alarm_low, m.warn_high, m.warn_low,
+                     CASE an.anomaly_type
+                       WHEN 'THRESHOLD' THEN CASE WHEN an.observed_value >= m.alarm_high THEN 'alarm_high'
+                                                  WHEN an.observed_value <= m.alarm_low  THEN 'alarm_low'
+                                                  WHEN an.observed_value >= m.warn_high  THEN 'warning_high'
+                                                  WHEN an.observed_value <= m.warn_low   THEN 'warning_low' END
+                       WHEN 'TREND'     THEN 'alarm_high'
+                       WHEN 'ZSCORE'    THEN 'mean_7d'
+                     END AS limit_type
+              FROM   dh_anomalies an
+              JOIN   dh_assets    a ON a.asset_id = an.asset_id
+              LEFT   JOIN dh_metrics m ON m.asset_type = a.asset_type AND m.metric = an.metric
+              WHERE  an.status <> 'CLOSED') y) x;
+
+COMMENT ON TABLE dh_findings_v IS 'Open anomalies with the limit they are compared with and the deviation from it';
+
 CREATE OR REPLACE PACKAGE dh_graph_api AS
   FUNCTION network_status                                                    RETURN CLOB;
   FUNCTION active_anomalies   (p_min_severity   IN VARCHAR2 DEFAULT 'WATCH') RETURN CLOB;
   FUNCTION root_cause         (p_district       IN VARCHAR2 DEFAULT NULL)    RETURN CLOB;
   FUNCTION impact             (p_asset_id       IN VARCHAR2)                 RETURN CLOB;
-  FUNCTION what_if            (p_out_of_service IN VARCHAR2,
+  -- p_out_of_service NULL: the assets that are out of service now (stopped pumps)
+  FUNCTION what_if            (p_out_of_service IN VARCHAR2 DEFAULT NULL,
                                p_open_valves    IN VARCHAR2 DEFAULT NULL)    RETURN CLOB;
   FUNCTION predict_failures   (p_horizon_hours  IN NUMBER   DEFAULT 240)     RETURN CLOB;
   FUNCTION critical_assets    (p_top            IN NUMBER   DEFAULT 5)       RETURN CLOB;
@@ -107,30 +148,39 @@ CREATE OR REPLACE PACKAGE BODY dh_graph_api AS
   END network_status;
 
   -- ---------------------------------------------------------------------------
+  -- Open anomalies with measured value, limit and deviation (DH_FINDINGS_V),
+  -- sorted by severity, then by the size of the deviation.
   FUNCTION active_anomalies (p_min_severity IN VARCHAR2 DEFAULT 'WATCH') RETURN CLOB IS
     l_json CLOB;
     l_min  NUMBER := CASE UPPER(p_min_severity) WHEN 'ALARM' THEN 3 WHEN 'WARNING' THEN 2 ELSE 1 END;
   BEGIN
     SELECT NVL(JSON_ARRAYAGG(
-               JSON_OBJECT('anomaly_id'     VALUE an.anomaly_id,
-                           'asset_id'       VALUE an.asset_id,
-                           'asset_name'     VALUE a.name,
-                           'asset_type'     VALUE a.asset_type,
-                           'district'       VALUE a.district,
-                           'metric'         VALUE an.metric,
-                           'type'           VALUE an.anomaly_type,
-                           'severity'       VALUE an.severity,
-                           'hours_to_alarm' VALUE an.hours_to_alarm,
-                           'details'        VALUE an.details,
-                           'since_utc'      VALUE TO_CHAR(an.detected_at, 'YYYY-MM-DD"T"HH24:MI"Z"')
+               JSON_OBJECT('anomaly_id'     VALUE f.anomaly_id,
+                           'asset_id'       VALUE f.asset_id,
+                           'asset_name'     VALUE f.asset_name,
+                           'asset_type'     VALUE f.asset_type,
+                           'district'       VALUE f.district,
+                           'metric'         VALUE f.metric,
+                           'metric_name'    VALUE f.metric_name,
+                           'type'           VALUE f.anomaly_type,
+                           'severity'       VALUE f.severity,
+                           'measured'       VALUE ROUND(f.observed_value, 2),
+                           'unit'           VALUE f.unit,
+                           'normal_value'   VALUE f.normal_value,
+                           'limit_type'     VALUE f.limit_type,
+                           'limit_value'    VALUE ROUND(f.limit_value, 2),
+                           'deviation'      VALUE f.deviation,
+                           'deviation_pct'  VALUE f.deviation_pct,
+                           'z_score'        VALUE CASE WHEN f.anomaly_type = 'ZSCORE' THEN ROUND(f.score, 1) END,
+                           'hours_to_alarm' VALUE f.hours_to_alarm,
+                           'details'        VALUE f.details,
+                           'since_utc'      VALUE TO_CHAR(f.detected_at, 'YYYY-MM-DD"T"HH24:MI"Z"')
                            ABSENT ON NULL)
-               ORDER BY DECODE(an.severity, 'ALARM', 3, 'WARNING', 2, 1) DESC, a.asset_type, an.asset_id
+               ORDER BY f.sev DESC, ABS(f.deviation_pct) DESC NULLS LAST, f.asset_type, f.asset_id
                RETURNING CLOB), TO_CLOB('[]'))
     INTO   l_json
-    FROM   dh_anomalies an
-    JOIN   dh_assets    a ON a.asset_id = an.asset_id
-    WHERE  an.status <> 'CLOSED'
-    AND    DECODE(an.severity, 'ALARM', 3, 'WARNING', 2, 1) >= l_min;
+    FROM   dh_findings_v f
+    WHERE  f.sev >= l_min;
     RETURN json_set(json_msg('min_severity', UPPER(p_min_severity)), 'anomalies', l_json);
   END active_anomalies;
 
@@ -177,6 +227,9 @@ CREATE OR REPLACE PACKAGE BODY dh_graph_api AS
       FROM   best b2 JOIN dh_assets bd ON bd.asset_id = b2.cold_building
       WHERE  b2.rn = 1
       GROUP  BY b2.suspect
+    ), sev AS (           -- worst open finding per asset: 3 ALARM, 2 WARNING, 1 WATCH
+      SELECT asset_id, MAX(DECODE(severity, 'ALARM', 3, 'WARNING', 2, 1)) AS sev
+      FROM   dh_anomalies WHERE status <> 'CLOSED' GROUP BY asset_id
     )
     SELECT JSON_OBJECT(
       'scope'          VALUE NVL(p_district, 'whole network'),
@@ -191,20 +244,52 @@ CREATE OR REPLACE PACKAGE BODY dh_graph_api AS
                                  'classification'   VALUE CASE WHEN i.has_flatline = 1
                                                                THEN 'SUSPECTED_SENSOR_FAULT'
                                                                ELSE 'EQUIPMENT_PROBLEM' END,
+                                 'severity'         VALUE DECODE(v.sev, 3, 'ALARM', 2, 'WARNING', 1, 'WATCH'),
                                  'cold_buildings'   VALUE i.cold_buildings,
+                                 'districts'        VALUE (
+                                     SELECT NVL(JSON_ARRAYAGG(d ORDER BY d RETURNING CLOB), TO_CLOB('[]'))
+                                     FROM (SELECT DISTINCT bd.district AS d
+                                           FROM best b5 JOIN dh_assets bd ON bd.asset_id = b5.cold_building
+                                           WHERE b5.rn = 1 AND b5.suspect = i.suspect)) FORMAT JSON,
+                                 -- assets with open findings between the root cause and its
+                                 -- cold buildings: symptoms of this incident, not causes
+                                 'symptom_assets'   VALUE (
+                                     SELECT NVL(JSON_ARRAYAGG(sa ORDER BY sa RETURNING CLOB), TO_CLOB('[]'))
+                                     FROM (SELECT DISTINCT l.suspect AS sa
+                                           FROM links l JOIN best b6 ON b6.cold_building = l.cold_building AND b6.rn = 1
+                                           WHERE b6.suspect = i.suspect AND l.suspect <> i.suspect)) FORMAT JSON,
                                  'apartments'       VALUE i.apartments,
                                  'critical_buildings' VALUE (
                                      SELECT NVL(JSON_ARRAYAGG(bd.name ORDER BY bd.name RETURNING CLOB), TO_CLOB('[]'))
                                      FROM best b3 JOIN dh_assets bd ON bd.asset_id = b3.cold_building
                                      WHERE b3.rn = 1 AND b3.suspect = i.suspect AND bd.criticality >= 4) FORMAT JSON,
+                                 -- the root cause's findings with measured value, limit, deviation
+                                 'findings'         VALUE (
+                                     SELECT NVL(JSON_ARRAYAGG(JSON_OBJECT(
+                                                'metric_name'    VALUE f.metric_name,
+                                                'type'           VALUE f.anomaly_type,
+                                                'severity'       VALUE f.severity,
+                                                'measured'       VALUE ROUND(f.observed_value, 2),
+                                                'unit'           VALUE f.unit,
+                                                'limit_type'     VALUE f.limit_type,
+                                                'limit_value'    VALUE ROUND(f.limit_value, 2),
+                                                'deviation'      VALUE f.deviation,
+                                                'deviation_pct'  VALUE f.deviation_pct,
+                                                'hours_to_alarm' VALUE f.hours_to_alarm,
+                                                'since_utc'      VALUE TO_CHAR(f.detected_at, 'YYYY-MM-DD"T"HH24:MI"Z"')
+                                                ABSENT ON NULL RETURNING CLOB)
+                                              ORDER BY f.sev DESC, ABS(f.deviation_pct) DESC NULLS LAST RETURNING CLOB),
+                                            TO_CLOB('[]'))
+                                     FROM dh_findings_v f WHERE f.asset_id = i.suspect) FORMAT JSON,
                                  'evidence'         VALUE (
                                      SELECT JSON_ARRAYAGG(an.anomaly_type || ' ' || an.severity || ': ' || an.details
                                                           ORDER BY DECODE(an.severity, 'ALARM', 3, 'WARNING', 2, 1) DESC
                                                           RETURNING CLOB)
                                      FROM dh_anomalies an
                                      WHERE an.asset_id = i.suspect AND an.status <> 'CLOSED') FORMAT JSON
-                                 RETURNING CLOB) ORDER BY i.cold_buildings DESC RETURNING CLOB), TO_CLOB('[]'))
-                              FROM incidents i JOIN dh_assets a ON a.asset_id = i.suspect) FORMAT JSON,
+                                 RETURNING CLOB) ORDER BY NVL(v.sev, 0) DESC, i.cold_buildings DESC RETURNING CLOB), TO_CLOB('[]'))
+                              FROM incidents i JOIN dh_assets a ON a.asset_id = i.suspect
+                              LEFT JOIN sev v ON v.asset_id = i.suspect) FORMAT JSON,
       'unexplained_cold_buildings' VALUE (
                               SELECT NVL(JSON_ARRAYAGG(b.asset_id ORDER BY b.asset_id RETURNING CLOB), TO_CLOB('[]'))
                               FROM dh_assets b
@@ -351,13 +436,28 @@ CREATE OR REPLACE PACKAGE BODY dh_graph_api AS
   END impact;
 
   -- ---------------------------------------------------------------------------
-  FUNCTION what_if (p_out_of_service IN VARCHAR2, p_open_valves IN VARCHAR2 DEFAULT NULL) RETURN CLOB IS
-    l_json    CLOB := unsupplied_buildings_json(p_out_of_service, p_open_valves);
+  -- What if these assets were out of service and these valves open?
+  -- Without p_out_of_service ("what if we open BYP-1?") the scenario starts from
+  -- the current state: the pumps that are stopped now. "basis" in the result
+  -- says which one was used.
+  FUNCTION what_if (p_out_of_service IN VARCHAR2 DEFAULT NULL, p_open_valves IN VARCHAR2 DEFAULT NULL) RETURN CLOB IS
+    l_oos     VARCHAR2(4000) := TRIM(p_out_of_service);
+    l_basis   VARCHAR2(20)   := 'scenario';
+    l_json    CLOB;
     l_islands CLOB;
   BEGIN
+    IF l_oos IS NULL THEN
+      SELECT LISTAGG(asset_id, ',') WITHIN GROUP (ORDER BY asset_id)
+      INTO   l_oos
+      FROM   dh_sim_state
+      WHERE  pump_state <> 'RUNNING';
+      l_basis := 'current state';
+    END IF;
+    l_json := unsupplied_buildings_json(l_oos, TRIM(p_open_valves));
+    l_json := json_set(l_json, 'basis', '"' || l_basis || '"');
     IF oga_available THEN
       BEGIN
-        dh_whatif.set_scenario(p_out_of_service, p_open_valves);
+        dh_whatif.set_scenario(l_oos, TRIM(p_open_valves));
         -- Weakly connected components: islands of the network without a heat plant
         EXECUTE IMMEDIATE q'~
           SELECT NVL(JSON_ARRAYAGG(JSON_OBJECT('component' VALUE comp, 'assets' VALUE n,
@@ -569,7 +669,7 @@ BEGIN RETURN dh_graph_api.root_cause(p_district); END;
 CREATE OR REPLACE FUNCTION agent_impact_analysis (p_asset_id IN VARCHAR2) RETURN CLOB IS
 BEGIN RETURN dh_graph_api.impact(UPPER(p_asset_id)); END;
 /
-CREATE OR REPLACE FUNCTION agent_what_if (p_out_of_service IN VARCHAR2, p_open_valves IN VARCHAR2 DEFAULT NULL) RETURN CLOB IS
+CREATE OR REPLACE FUNCTION agent_what_if (p_out_of_service IN VARCHAR2 DEFAULT NULL, p_open_valves IN VARCHAR2 DEFAULT NULL) RETURN CLOB IS
 BEGIN RETURN dh_graph_api.what_if(p_out_of_service, p_open_valves); END;
 /
 CREATE OR REPLACE FUNCTION agent_predict_failures (p_horizon_hours IN NUMBER DEFAULT 240) RETURN CLOB IS
