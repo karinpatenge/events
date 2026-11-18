@@ -1,0 +1,723 @@
+################################################################################
+# File       : 12_query_ontologies.sparql
+# Project    : DOAG 2026 - "Just a sprain?" (Ulrike & Karin)
+# Purpose    : Sample SPARQL queries against the two ontologies loaded by
+#                09a_load_knee_kg.sql  -> RDF graph KNEE_KG  (353 triples, own
+#                                         knee knowledge graph, kg: namespace)
+#                09b_load_fma.sql      -> RDF graph FMA      (612,982 triples,
+#                                         Foundational Model of Anatomy, OBO
+#                                         release 2020-04-13, CC BY 3.0)
+#              Part A queries the FMA, part B the knee ontology, part C joins
+#              both through skos:exactMatch.
+# Run        : via a SPARQL endpoint (for example Oracle RDF Graph Server with
+#              the Query UI) on the RDF network RDF_NETWORK of user DOAG2026.
+#              Each query names the dataset it needs:
+#                FMA          - RDF graph FMA
+#                KNEE_KG      - RDF graph KNEE_KG
+#                KNEE_FMA_VM  - graph collection KNEE_KG + FMA + entailment
+#                               KNEE_KG_RIX (09b, section 2); needed for the
+#                               cross-ontology queries and the inferred
+#                               predicates kg:showsIndicatorOf,
+#                               kg:showsCounterIndicatorOf, kg:matchesMechanismOf
+#              Copy one query at a time into the endpoint. SELECT queries
+#              return tables, DESCRIBE and CONSTRUCT queries return graphs
+#              (A0, A2a, A2b, A11, A12, B12, B13, C5). Plain SPARQL 1.1,
+#              no Oracle-specific functions; the same queries work in a
+#              SEM_MATCH call with the prefixes kept.
+# Before     : 08_create_rdf_network.sql, 09a_load_knee_kg.sql, 09b_load_fma.sql
+# Note       : Expected row counts refer to the data as loaded by 09a/09b.
+################################################################################
+
+#===============================================================================
+# A. FMA - Foundational Model of Anatomy
+#===============================================================================
+
+#-------------------------------------------------------------------------------
+# A0. Show all triples   [dataset: FMA, KNEE_KG or KNEE_FMA_VM]
+#     The simplest possible query: every subject, predicate, object. On the
+#     FMA that is 612,982 rows, so the LIMIT keeps the endpoint responsive;
+#     raise or drop it for KNEE_KG (353 triples). On KNEE_FMA_VM the inferred
+#     triples of the entailment KNEE_KG_RIX are included.
+#-------------------------------------------------------------------------------
+SELECT ?s ?p ?o
+WHERE {
+  ?s ?p ?o .
+}
+LIMIT 100
+
+# Return the result as RDF graph
+CONSTRUCT WHERE { ?s ?p ?o }
+LIMIT 100
+
+#-------------------------------------------------------------------------------
+# A1. How big is the FMA? Triples, classes, labels   [dataset: FMA]
+#     Expected: 612982 triples, 78984 FMA classes (owl:Class with an FMA IRI),
+#     78988 labels.
+#-------------------------------------------------------------------------------
+PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?triples ?classes ?labels
+WHERE {
+  { SELECT (COUNT(*) AS ?triples) WHERE { ?s ?p ?o } }
+  { SELECT (COUNT(DISTINCT ?c) AS ?classes)
+    WHERE { ?c a owl:Class . FILTER (STRSTARTS(STR(?c), "http://purl.obolibrary.org/obo/FMA_")) } }
+  { SELECT (COUNT(*) AS ?labels) WHERE { ?x rdfs:label ?l } }
+}
+
+#-------------------------------------------------------------------------------
+# A2a. Find "Knee joint" by its label   [dataset: FMA]
+#      Exact label match in the triple pattern. The FMA stores its labels as
+#      typed literals ("Knee joint"^^xsd:string); writing the type explicitly
+#      matches the stored value exactly, so the lookup can use the index
+#      instead of scanning all labels. For a case-insensitive match use
+#      FILTER (LCASE(STR(?label)) = "knee joint") instead (slower).
+#      Expected: 1 row, obo:FMA_35175, FMA:35175, namespace "fma";
+#      the CONSTRUCT returns 3 triples.
+#-------------------------------------------------------------------------------
+PREFIX rdfs:     <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX xsd:      <http://www.w3.org/2001/XMLSchema#>
+PREFIX oboInOwl: <http://www.geneontology.org/formats/oboInOwl#>
+SELECT ?joint ?id ?namespace
+WHERE {
+  ?joint rdfs:label "Knee joint"^^xsd:string ;
+         oboInOwl:id ?id ;
+         oboInOwl:hasOBONamespace ?namespace .
+}
+
+# Return the result as RDF graph
+PREFIX rdfs:     <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX xsd:      <http://www.w3.org/2001/XMLSchema#>
+PREFIX oboInOwl: <http://www.geneontology.org/formats/oboInOwl#>
+CONSTRUCT {
+  ?joint rdfs:label               "Knee joint"^^xsd:string ;
+         oboInOwl:id              ?id ;
+         oboInOwl:hasOBONamespace ?namespace .
+}
+WHERE {
+  ?joint rdfs:label               "Knee joint"^^xsd:string ;
+         oboInOwl:id              ?id ;
+         oboInOwl:hasOBONamespace ?namespace .
+}
+
+#-------------------------------------------------------------------------------
+# A2b. Find "Knee joint" by its FMA ID   [dataset: FMA]
+#      The other way round: the IRI is known, the label is looked up.
+#      FMA:35175 is the ID the knee ontology maps kg:KneeJoint to.
+#      Expected: 1 row, label "Knee joint", FMA:35175, namespace "fma";
+#      the CONSTRUCT returns 3 triples.
+#-------------------------------------------------------------------------------
+PREFIX obo:      <http://purl.obolibrary.org/obo/>
+PREFIX rdfs:     <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX oboInOwl: <http://www.geneontology.org/formats/oboInOwl#>
+SELECT ?label ?id ?namespace
+WHERE {
+  obo:FMA_35175 rdfs:label ?label ;
+                oboInOwl:id ?id ;
+                oboInOwl:hasOBONamespace ?namespace .
+}
+
+# Return the result as RDF graph
+PREFIX obo:      <http://purl.obolibrary.org/obo/>
+PREFIX rdfs:     <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX oboInOwl: <http://www.geneontology.org/formats/oboInOwl#>
+CONSTRUCT {
+  obo:FMA_35175 rdfs:label                ?label ;
+                oboInOwl:id               ?id ;
+                oboInOwl:hasOBONamespace  ?namespace .
+}
+WHERE {
+  obo:FMA_35175 rdfs:label                ?label ;
+                oboInOwl:id               ?id ;
+                oboInOwl:hasOBONamespace  ?namespace .
+}
+
+#-------------------------------------------------------------------------------
+# A3. Find structures by name: everything called "cruciate ligament"   [dataset: FMA]
+#     Case-insensitive match on label and exact synonyms.
+#     Expected: Cruciate ligament (44611), Anterior (44614), Posterior (44617),
+#     plus their left/right/part subclasses and synonyms.
+#-------------------------------------------------------------------------------
+PREFIX rdfs:     <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX oboInOwl: <http://www.geneontology.org/formats/oboInOwl#>
+SELECT ?structure ?id ?name ?kind
+WHERE {
+  { ?structure rdfs:label ?name . BIND ("label" AS ?kind) }
+  UNION
+  { ?structure oboInOwl:hasExactSynonym ?name . BIND ("synonym" AS ?kind) }
+  ?structure oboInOwl:id ?id .
+  FILTER (CONTAINS(LCASE(STR(?name)), "cruciate ligament"))
+}
+ORDER BY ?id ?kind
+
+#-------------------------------------------------------------------------------
+# A4. The direct subclasses of "Ligament of knee joint" (FMA:44580)   [dataset: FMA]
+#     This is the level the knee ontology models: cruciate, collateral and
+#     patellar ligaments.
+#-------------------------------------------------------------------------------
+PREFIX obo:  <http://purl.obolibrary.org/obo/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?ligament ?label
+WHERE {
+  ?ligament rdfs:subClassOf obo:FMA_44580 ;
+            rdfs:label ?label .
+}
+ORDER BY ?label
+
+#-------------------------------------------------------------------------------
+# A5. Where does the anterior cruciate ligament sit in the hierarchy?   [dataset: FMA]
+#     Walks rdfs:subClassOf upwards with a property path and keeps only named
+#     classes (the blank nodes are OWL restrictions, see A6).
+#     Expected chain: Anterior cruciate ligament -> Cruciate ligament ->
+#     Ligament of knee joint -> ... -> Anatomical entity.
+#-------------------------------------------------------------------------------
+PREFIX obo:  <http://purl.obolibrary.org/obo/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?ancestor ?label
+WHERE {
+  obo:FMA_44614 rdfs:subClassOf+ ?ancestor .
+  ?ancestor rdfs:label ?label .
+  FILTER (isIRI(?ancestor))
+}
+
+#-------------------------------------------------------------------------------
+# A6. What is the anterior cruciate ligament part of?   [dataset: FMA]
+#     The OBO export encodes partonomy as OWL restrictions:
+#       FMA_44614 rdfs:subClassOf [ owl:onProperty fma:constitutional_part_of ;
+#                                    owl:someValuesFrom FMA_35175 ]
+#     Expected: Knee joint (constitutional_part_of).
+#-------------------------------------------------------------------------------
+PREFIX obo:  <http://purl.obolibrary.org/obo/>
+PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?relation ?whole ?whole_label
+WHERE {
+  obo:FMA_44614 rdfs:subClassOf ?restriction .
+  ?restriction a owl:Restriction ;
+               owl:onProperty    ?relation ;
+               owl:someValuesFrom ?whole .
+  ?whole rdfs:label ?whole_label .
+}
+
+#-------------------------------------------------------------------------------
+# A7. The other way round: which structures are parts of the knee joint?   [dataset: FMA]
+#     All classes with a part_of restriction that points to FMA:35175,
+#     grouped by the kind of part-of relation.
+#-------------------------------------------------------------------------------
+PREFIX obo:  <http://purl.obolibrary.org/obo/>
+PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?relation ?part ?part_label
+WHERE {
+  ?part rdfs:subClassOf ?restriction ;
+        rdfs:label ?part_label .
+  ?restriction a owl:Restriction ;
+               owl:onProperty    ?relation ;
+               owl:someValuesFrom obo:FMA_35175 .
+}
+ORDER BY ?relation ?part_label
+
+#-------------------------------------------------------------------------------
+# A8. Which part-of relations does the FMA use, and how often?   [dataset: FMA]
+#     Expected top entries: regional_part_of, constitutional_part_of,
+#     branch_of, systemic_part_of, bounds, attaches_to.
+#-------------------------------------------------------------------------------
+PREFIX owl: <http://www.w3.org/2002/07/owl#>
+SELECT ?relation (COUNT(*) AS ?restrictions)
+WHERE {
+  ?restriction a owl:Restriction ;
+               owl:onProperty ?relation .
+}
+GROUP BY ?relation
+ORDER BY DESC(?restrictions)
+
+#-------------------------------------------------------------------------------
+# A9. Textual definitions for the knee structures the demo uses   [dataset: FMA]
+#     IAO_0000115 is the OBO "definition" annotation. Only about 1,100 of the
+#     79,000 FMA classes have one, and none of the knee structures below does,
+#     so the definition column stays empty: the FMA is a structural ontology,
+#     not a dictionary. The query is kept as the template for the lookup.
+#-------------------------------------------------------------------------------
+PREFIX obo:  <http://purl.obolibrary.org/obo/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?structure ?label ?definition
+WHERE {
+  VALUES ?structure { obo:FMA_35175 obo:FMA_44580 obo:FMA_44611 obo:FMA_44614
+                      obo:FMA_44617 obo:FMA_9660  obo:FMA_44600 obo:FMA_44581
+                      obo:FMA_44620 obo:FMA_44631 obo:FMA_43606 obo:FMA_24485
+                      obo:FMA_35195 }
+  ?structure rdfs:label ?label .
+  OPTIONAL { ?structure obo:IAO_0000115 ?definition }
+}
+ORDER BY ?label
+
+#-------------------------------------------------------------------------------
+# A10. How many subclasses does each knee structure have?   [dataset: FMA]
+#      Shows how fine-grained the FMA is below the level the demo models
+#      (for example left/right and parts of each ligament).
+#-------------------------------------------------------------------------------
+PREFIX obo:  <http://purl.obolibrary.org/obo/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?structure ?label (COUNT(DISTINCT ?sub) AS ?subclasses)
+WHERE {
+  VALUES ?structure { obo:FMA_35175 obo:FMA_44580 obo:FMA_44611 obo:FMA_44614
+                      obo:FMA_44620 obo:FMA_24485 }
+  ?structure rdfs:label ?label .
+  OPTIONAL { ?sub rdfs:subClassOf+ ?structure . FILTER (isIRI(?sub)) }
+}
+GROUP BY ?structure ?label
+ORDER BY DESC(?subclasses)
+
+#-------------------------------------------------------------------------------
+# A11. DESCRIBE the anterior cruciate ligament   [dataset: FMA]
+#      Returns every triple about FMA:44614 as a graph (not a table): label,
+#      ID, namespace, rdf:type, subClassOf links and, depending on the
+#      endpoint's DESCRIBE strategy, the blank-node restriction behind
+#      "constitutional part of knee joint". Good for a first look at an
+#      unfamiliar resource.
+#-------------------------------------------------------------------------------
+PREFIX obo: <http://purl.obolibrary.org/obo/>
+DESCRIBE obo:FMA_44614
+
+#-------------------------------------------------------------------------------
+# A12. CONSTRUCT a flat part-of graph for the knee joint   [dataset: FMA]
+#      The OBO export hides partonomy inside OWL restrictions (A6, A7). This
+#      query materialises it as plain triples "?part fma:xxx_part_of knee joint"
+#      and adds the labels, so the result can be exported as Turtle or loaded
+#      into another graph. Expected: 41 triples (20 part-of links and the labels).
+#-------------------------------------------------------------------------------
+PREFIX obo:  <http://purl.obolibrary.org/obo/>
+PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+CONSTRUCT {
+  ?part ?relation obo:FMA_35175 .
+  ?part rdfs:label ?part_label .
+  obo:FMA_35175 rdfs:label ?knee_label .
+}
+WHERE {
+  obo:FMA_35175 rdfs:label ?knee_label .
+  ?part rdfs:subClassOf ?restriction ;
+        rdfs:label ?part_label .
+  ?restriction a owl:Restriction ;
+               owl:onProperty    ?relation ;
+               owl:someValuesFrom obo:FMA_35175 .
+}
+
+#===============================================================================
+# B. Knee ontology KNEE_KG (own, synthetic; namespace kg:)
+#===============================================================================
+
+#-------------------------------------------------------------------------------
+# B1. Schema overview: the classes and how many instances each has   [dataset: KNEE_KG]
+#     Expected: AnatomicalStructure 13, Finding 10, Injury 7, InjuryPattern 5,
+#     Mechanism 5, Procedure 3, Terrain 3, SymptomReport 1.
+#-------------------------------------------------------------------------------
+PREFIX kg:   <https://doag2026.example/knee#>
+PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?class ?label_de ?label_en (COUNT(?instance) AS ?instances)
+WHERE {
+  ?class a owl:Class .
+  OPTIONAL { ?class rdfs:label ?label_de FILTER (LANG(?label_de) = "de") }
+  OPTIONAL { ?class rdfs:label ?label_en FILTER (LANG(?label_en) = "en") }
+  OPTIONAL { ?instance a ?class }
+}
+GROUP BY ?class ?label_de ?label_en
+ORDER BY DESC(?instances)
+
+#-------------------------------------------------------------------------------
+# B2. Anatomy: every structure with its German name, FMA mapping and the
+#     structure it is part of   [dataset: KNEE_KG]
+#     Expected: 13 rows, all with an FMA ID; 11 are part of the knee joint,
+#     the knee joint itself and the ankle joint have no kg:partOf.
+#-------------------------------------------------------------------------------
+PREFIX kg:   <https://doag2026.example/knee#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+SELECT ?structure ?name_de ?fma ?part_of
+WHERE {
+  ?structure a kg:AnatomicalStructure ;
+             rdfs:label ?name_de .
+  FILTER (LANG(?name_de) = "de")
+  OPTIONAL { ?structure skos:exactMatch ?fma }
+  OPTIONAL { ?structure kg:partOf ?part_of }
+}
+ORDER BY ?part_of ?name_de
+
+#-------------------------------------------------------------------------------
+# B3. Findings and their German synonyms   [dataset: KNEE_KG]
+#     These skos:altLabel values are what the text search in 11e matches
+#     against the symptom reports ("Plopp", "wackelig", ...).
+#-------------------------------------------------------------------------------
+PREFIX kg:   <https://doag2026.example/knee#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+SELECT ?finding ?label_de (GROUP_CONCAT(?synonym; separator=" | ") AS ?synonyms)
+WHERE {
+  ?finding a kg:Finding ;
+           rdfs:label ?label_de .
+  FILTER (LANG(?label_de) = "de")
+  OPTIONAL { ?finding skos:altLabel ?synonym }
+}
+GROUP BY ?finding ?label_de
+ORDER BY ?label_de
+
+#-------------------------------------------------------------------------------
+# B4. Which finding does a word belong to? Reverse lookup for "Plopp"   [dataset: KNEE_KG]
+#     Expected: kg:AudiblePop ("Hörbares Plopp").
+#-------------------------------------------------------------------------------
+PREFIX kg:   <https://doag2026.example/knee#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+SELECT ?finding ?label_de ?matched
+WHERE {
+  ?finding a kg:Finding ;
+           rdfs:label ?label_de .
+  FILTER (LANG(?label_de) = "de")
+  { ?finding skos:altLabel ?matched } UNION { ?finding rdfs:label ?matched }
+  FILTER (CONTAINS(LCASE(STR(?matched)), "plopp"))
+}
+
+#-------------------------------------------------------------------------------
+# B5. The rule layer as data: all injury patterns in one row each   [dataset: KNEE_KG]
+#     Mechanism, strong and weak indicators, counter-indicators, threshold,
+#     suggested injury, recommended procedure and urgency.
+#     Expected: 5 rows (ACL, Meniscus, MCL, Contusion, Sprain).
+#-------------------------------------------------------------------------------
+PREFIX kg:   <https://doag2026.example/knee#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?pattern ?mechanism ?min_strong
+       (GROUP_CONCAT(DISTINCT COALESCE(?strong,  ""); separator=", ") AS ?strong_indicators)
+       (GROUP_CONCAT(DISTINCT COALESCE(?weak,    ""); separator=", ") AS ?weak_indicators)
+       (GROUP_CONCAT(DISTINCT COALESCE(?against, ""); separator=", ") AS ?arguments_against)
+       ?suggests ?recommends ?urgency_hours
+WHERE {
+  ?pattern a kg:InjuryPattern ;
+           kg:requiresMechanism/rdfs:label ?mechanism ;
+           kg:minStrongIndicators ?min_strong ;
+           kg:suggests/rdfs:label ?suggests ;
+           kg:recommends/rdfs:label ?recommends ;
+           kg:urgencyHours ?urgency_hours .
+  FILTER (LANG(?mechanism) = "de" && LANG(?suggests) = "de" && LANG(?recommends) = "de")
+  OPTIONAL { ?pattern kg:hasStrongIndicator/rdfs:label ?strong  FILTER (LANG(?strong)  = "en") }
+  OPTIONAL { ?pattern kg:hasWeakIndicator/rdfs:label   ?weak    FILTER (LANG(?weak)    = "en") }
+  OPTIONAL { ?pattern kg:argumentAgainst/rdfs:label    ?against FILTER (LANG(?against) = "en") }
+}
+GROUP BY ?pattern ?mechanism ?min_strong ?suggests ?recommends ?urgency_hours
+ORDER BY ?urgency_hours
+
+#-------------------------------------------------------------------------------
+# B6. Jonas' symptom report as it is stored in the graph   [dataset: KNEE_KG]
+#     Expected: report SR-2026-11-16-0001, patient P0001, right knee,
+#     twisting injury, findings audible pop, rapid swelling, giving way,
+#     pain on walking.
+#-------------------------------------------------------------------------------
+PREFIX kg:   <https://doag2026.example/knee#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?report_id ?patient_id ?side ?structure ?mechanism
+       (GROUP_CONCAT(?finding; separator=", ") AS ?findings)
+WHERE {
+  ?report a kg:SymptomReport ;
+          kg:reportId ?report_id ;
+          kg:patientId ?patient_id ;
+          kg:side ?side ;
+          kg:concernsStructure/rdfs:label ?structure ;
+          kg:reportsMechanism/rdfs:label ?mechanism ;
+          kg:reportsFinding/rdfs:label ?finding .
+  FILTER (LANG(?structure) = "de" && LANG(?mechanism) = "de" && LANG(?finding) = "de")
+}
+GROUP BY ?report_id ?patient_id ?side ?structure ?mechanism
+
+#-------------------------------------------------------------------------------
+# B7. Which pattern does Jonas' report fit? The 11e logic in pure SPARQL   [dataset: KNEE_KG]
+#     For every pattern: does the mechanism match, how many strong indicators
+#     does the report show, how many arguments against, is the threshold met.
+#     Expected: Pattern_ACL fits (mechanism ok, 3 of min 2 strong, 0 against);
+#     Pattern_Sprain is ruled out (1 of min 2 strong and 3 arguments against),
+#     Meniscus has the mechanism but no indicator, MCL and Contusion need a
+#     different mechanism.
+#-------------------------------------------------------------------------------
+PREFIX kg:   <https://doag2026.example/knee#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?pattern ?mechanism_ok ?strong_hits ?min_strong ?against_hits
+       (IF(?mechanism_ok && ?strong_hits >= ?min_strong && ?against_hits = 0, "fits", "no") AS ?verdict)
+WHERE {
+  {
+    SELECT ?pattern ?min_strong
+           (MAX(IF(BOUND(?m_req) && ?m_req = ?m_rep, 1, 0)) AS ?mech)
+           (COUNT(DISTINCT ?strong)  AS ?strong_hits)
+           (COUNT(DISTINCT ?against) AS ?against_hits)
+    WHERE {
+      ?report a kg:SymptomReport ; kg:reportId "SR-2026-11-16-0001" ;
+              kg:reportsMechanism ?m_rep .
+      ?pattern a kg:InjuryPattern ; kg:minStrongIndicators ?min_strong .
+      OPTIONAL { ?pattern kg:requiresMechanism ?m_req }
+      OPTIONAL { ?pattern kg:hasStrongIndicator ?strong . ?report kg:reportsFinding ?strong }
+      OPTIONAL { ?pattern kg:argumentAgainst ?against . ?report kg:reportsFinding ?against }
+    }
+    GROUP BY ?pattern ?min_strong
+  }
+  BIND (?mech = 1 AS ?mechanism_ok)
+}
+ORDER BY DESC(?verdict) DESC(?strong_hits)
+
+#-------------------------------------------------------------------------------
+# B8. From the fitting pattern to the recommendation   [dataset: KNEE_KG]
+#     Expected: ACL rupture, affects the anterior cruciate ligament
+#     (FMA:44614), MRI within 48 hours.
+#-------------------------------------------------------------------------------
+PREFIX kg:   <https://doag2026.example/knee#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+SELECT ?injury ?structure ?fma ?procedure ?urgency_hours ?case_code
+WHERE {
+  kg:Pattern_ACL kg:suggests ?inj ;
+                 kg:recommends/rdfs:label ?procedure ;
+                 kg:urgencyHours ?urgency_hours .
+  ?inj rdfs:label ?injury ;
+       kg:caseDiagnosisCode ?case_code ;
+       kg:affects ?str .
+  ?str rdfs:label ?structure ;
+       skos:exactMatch ?fma .
+  FILTER (LANG(?injury) = "de" && LANG(?structure) = "de" && LANG(?procedure) = "de")
+}
+
+#-------------------------------------------------------------------------------
+# B9. Transitive part-of: everything that is part of the knee joint,
+#     directly or through a chain   [dataset: KNEE_KG]
+#     kg:partOf is declared owl:TransitiveProperty; the property path makes
+#     the query work even without the entailment.
+#-------------------------------------------------------------------------------
+PREFIX kg:   <https://doag2026.example/knee#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?part ?label_en
+WHERE {
+  ?part kg:partOf+ kg:KneeJoint ;
+        rdfs:label ?label_en .
+  FILTER (LANG(?label_en) = "en")
+}
+ORDER BY ?label_en
+
+#-------------------------------------------------------------------------------
+# B10. Terrain rules: which pattern is typical for which ground, and the
+#      OpenStreetMap rule behind it (used with the OSM trails in 11g)   [dataset: KNEE_KG]
+#-------------------------------------------------------------------------------
+PREFIX kg:   <https://doag2026.example/knee#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?terrain ?osm_rule (GROUP_CONCAT(?pattern_label; separator=", ") AS ?patterns)
+WHERE {
+  ?t a kg:Terrain ;
+     rdfs:label ?terrain ;
+     kg:osmRule ?osm_rule .
+  FILTER (LANG(?terrain) = "en")
+  OPTIONAL { ?p kg:typicalTerrain ?t ; rdfs:label ?pattern_label }
+}
+GROUP BY ?terrain ?osm_rule
+ORDER BY ?terrain
+
+#-------------------------------------------------------------------------------
+# B11. Inferred triples from the rulebase KNEE_RB   [dataset: KNEE_FMA_VM]
+#      The entailment KNEE_KG_RIX (09a, section 2) adds, per report and
+#      pattern, kg:showsIndicatorOf, kg:showsCounterIndicatorOf and
+#      kg:matchesMechanismOf. Against the plain graph KNEE_KG this query
+#      returns no rows.
+#      Expected: ACL 3 indicators + mechanism; Sprain 1 indicator,
+#      3 counter-indicators + mechanism; Meniscus mechanism only;
+#      Contusion 1 counter-indicator; MCL nothing.
+#-------------------------------------------------------------------------------
+PREFIX kg: <https://doag2026.example/knee#>
+SELECT ?pattern
+       (COUNT(DISTINCT ?i)  AS ?indicators)
+       (COUNT(DISTINCT ?c)  AS ?counter_indicators)
+       (COUNT(DISTINCT ?m)  AS ?mechanism_matches)
+WHERE {
+  ?report kg:reportId "SR-2026-11-16-0001" .
+  ?pattern a kg:InjuryPattern .
+  OPTIONAL { ?report kg:showsIndicatorOf        ?pattern . BIND (?pattern AS ?i) }
+  OPTIONAL { ?report kg:showsCounterIndicatorOf ?pattern . BIND (?pattern AS ?c) }
+  OPTIONAL { ?report kg:matchesMechanismOf      ?pattern . BIND (?pattern AS ?m) }
+}
+GROUP BY ?pattern
+ORDER BY DESC(?indicators)
+
+#-------------------------------------------------------------------------------
+# B12. DESCRIBE Jonas' symptom report   [dataset: KNEE_KG or KNEE_FMA_VM]
+#      All triples with the report as subject: IDs, side, structure, mechanism
+#      and the four findings. On KNEE_FMA_VM the inferred triples
+#      (kg:showsIndicatorOf, kg:showsCounterIndicatorOf, kg:matchesMechanismOf)
+#      appear as well, so DESCRIBE shows what the rulebase added.
+#-------------------------------------------------------------------------------
+PREFIX kg: <https://doag2026.example/knee#>
+DESCRIBE kg:Report_SR-2026-11-16-0001
+
+#-------------------------------------------------------------------------------
+# B13. CONSTRUCT the explanation graph for Jonas   [dataset: KNEE_KG]
+#      Builds a small, self-contained graph with only what a clinician needs
+#      to follow the verdict: the report, the findings that are strong
+#      indicators of the ACL pattern, the pattern's suggested injury, the
+#      affected structure with its FMA ID, and the recommendation. The
+#      output can be fed to a graph viewer or stored as "explanation".
+#      Expected: about 20 triples.
+#-------------------------------------------------------------------------------
+PREFIX kg:   <https://doag2026.example/knee#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+CONSTRUCT {
+  ?report   kg:reportsFinding   ?finding .
+  ?finding  rdfs:label          ?finding_label .
+  ?finding  kg:strongIndicatorOf ?pattern .
+  ?report   kg:reportsMechanism ?mechanism .
+  ?pattern  kg:requiresMechanism ?mechanism .
+  ?pattern  rdfs:label          ?pattern_label .
+  ?pattern  kg:suggests         ?injury .
+  ?injury   rdfs:label          ?injury_label .
+  ?injury   kg:affects          ?structure .
+  ?structure rdfs:label         ?structure_label .
+  ?structure skos:exactMatch    ?fma .
+  ?pattern  kg:recommends       ?procedure .
+  ?procedure rdfs:label         ?procedure_label .
+  ?pattern  kg:urgencyHours     ?hours .
+}
+WHERE {
+  BIND (kg:Pattern_ACL AS ?pattern)
+  ?report a kg:SymptomReport ; kg:reportId "SR-2026-11-16-0001" ;
+          kg:reportsMechanism ?mechanism ;
+          kg:reportsFinding ?finding .
+  ?pattern kg:hasStrongIndicator ?finding ;
+           kg:requiresMechanism  ?mechanism ;
+           rdfs:label ?pattern_label ;
+           kg:suggests ?injury ;
+           kg:recommends ?procedure ;
+           kg:urgencyHours ?hours .
+  ?finding   rdfs:label ?finding_label .
+  ?injury    rdfs:label ?injury_label ; kg:affects ?structure .
+  ?structure rdfs:label ?structure_label ; skos:exactMatch ?fma .
+  ?procedure rdfs:label ?procedure_label .
+  FILTER (LANG(?finding_label) = "de" && LANG(?injury_label) = "de"
+       && LANG(?structure_label) = "de" && LANG(?procedure_label) = "de")
+}
+
+#===============================================================================
+# C. Both ontologies together (graph collection KNEE_FMA_VM)
+#===============================================================================
+
+#-------------------------------------------------------------------------------
+# C1. Check the mappings: does every skos:exactMatch point to an existing
+#     FMA class, and do the names agree?   [dataset: KNEE_FMA_VM]
+#     Expected: 13 rows, every ?fma_label bound.
+#-------------------------------------------------------------------------------
+PREFIX kg:   <https://doag2026.example/knee#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX oboInOwl: <http://www.geneontology.org/formats/oboInOwl#>
+SELECT ?structure ?name_en ?fma_id ?fma_label
+WHERE {
+  ?structure a kg:AnatomicalStructure ;
+             rdfs:label ?name_en ;
+             skos:exactMatch ?fma .
+  FILTER (LANG(?name_en) = "en")
+  OPTIONAL { ?fma rdfs:label ?fma_label ; oboInOwl:id ?fma_id }
+}
+ORDER BY ?name_en
+
+#-------------------------------------------------------------------------------
+# C2. From Jonas' report to the FMA: the injured structure, its FMA entry,
+#     synonyms and what the FMA says it is part of   [dataset: KNEE_FMA_VM]
+#     Expected: Vorderes Kreuzband -> FMA:44614 "Anterior cruciate ligament",
+#     constitutional part of Knee joint.
+#-------------------------------------------------------------------------------
+PREFIX kg:   <https://doag2026.example/knee#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+PREFIX oboInOwl: <http://www.geneontology.org/formats/oboInOwl#>
+SELECT ?structure_de ?fma_id ?fma_label
+       (GROUP_CONCAT(DISTINCT COALESCE(?synonym, ""); separator=" | ") AS ?fma_synonyms)
+       (GROUP_CONCAT(DISTINCT COALESCE(?whole_label, ""); separator=" | ") AS ?fma_part_of)
+WHERE {
+  kg:Pattern_ACL kg:suggests/kg:affects ?structure .
+  ?structure rdfs:label ?structure_de ;
+             skos:exactMatch ?fma .
+  FILTER (LANG(?structure_de) = "de")
+  ?fma rdfs:label ?fma_label ;
+       oboInOwl:id ?fma_id .
+  OPTIONAL { ?fma oboInOwl:hasExactSynonym ?synonym }
+  OPTIONAL {
+    ?fma rdfs:subClassOf ?r .
+    ?r a owl:Restriction ; owl:someValuesFrom ?whole .
+    ?whole rdfs:label ?whole_label .
+  }
+}
+GROUP BY ?structure_de ?fma_id ?fma_label
+
+#-------------------------------------------------------------------------------
+# C3. What the knee ontology leaves out: FMA parts of the knee joint that have
+#     no counterpart in KNEE_KG   [dataset: KNEE_FMA_VM]
+#     Useful to show that the demo ontology is a small, deliberate subset.
+#-------------------------------------------------------------------------------
+PREFIX kg:   <https://doag2026.example/knee#>
+PREFIX obo:  <http://purl.obolibrary.org/obo/>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+SELECT ?fma_part ?fma_label
+WHERE {
+  ?fma_part rdfs:subClassOf ?r ;
+            rdfs:label ?fma_label .
+  ?r a owl:Restriction ; owl:someValuesFrom obo:FMA_35175 .
+  FILTER NOT EXISTS { ?kg skos:exactMatch ?fma_part }
+}
+ORDER BY ?fma_label
+
+#-------------------------------------------------------------------------------
+# C4. Consistency check between the two hierarchies   [dataset: KNEE_FMA_VM]
+#     For every rdfs:subClassOf in KNEE_KG between two mapped structures,
+#     is the same subclass relation present in the FMA (directly or via a
+#     chain)? Expected: all rows "yes".
+#-------------------------------------------------------------------------------
+PREFIX kg:   <https://doag2026.example/knee#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+SELECT ?sub_label ?super_label ?fma_sub ?fma_super
+       (IF(BOUND(?found), "yes", "no") AS ?in_fma)
+WHERE {
+  ?sub rdfs:subClassOf ?super ;
+       a kg:AnatomicalStructure ;
+       rdfs:label ?sub_label ;
+       skos:exactMatch ?fma_sub .
+  ?super rdfs:label ?super_label ;
+         skos:exactMatch ?fma_super .
+  FILTER (LANG(?sub_label) = "en" && LANG(?super_label) = "en")
+  OPTIONAL { ?fma_sub rdfs:subClassOf+ ?fma_super . BIND (true AS ?found) }
+}
+ORDER BY ?super_label ?sub_label
+
+#-------------------------------------------------------------------------------
+# C5. CONSTRUCT a bridge graph: knee ontology terms with their FMA names   [dataset: KNEE_FMA_VM]
+#     For every mapped structure, copy the FMA label and ID onto the kg: term
+#     as skos:prefLabel / skos:notation and link the FMA parent. The result is
+#     a small, English-labelled graph that stands on its own without the
+#     612,982 FMA triples. Expected: 13 structures, 59 triples.
+#-------------------------------------------------------------------------------
+PREFIX kg:   <https://doag2026.example/knee#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+PREFIX oboInOwl: <http://www.geneontology.org/formats/oboInOwl#>
+CONSTRUCT {
+  ?structure skos:prefLabel  ?fma_label ;
+             skos:notation   ?fma_id ;
+             skos:exactMatch ?fma ;
+             skos:broader    ?fma_parent .
+  ?fma_parent rdfs:label     ?parent_label .
+}
+WHERE {
+  ?structure a kg:AnatomicalStructure ;
+             skos:exactMatch ?fma .
+  ?fma rdfs:label ?fma_label ;
+       oboInOwl:id ?fma_id .
+  OPTIONAL {
+    ?fma rdfs:subClassOf ?fma_parent .
+    FILTER (isIRI(?fma_parent))
+    ?fma_parent rdfs:label ?parent_label .
+  }
+}
