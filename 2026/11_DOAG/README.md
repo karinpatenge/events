@@ -5,10 +5,9 @@ Material for the five sessions at the DOAG 2026 Konferenz + Ausstellung, 17–19
 | Date | Session | Folder |
 | --- | --- | --- |
 | 17 November | From IoT Data to Intelligent Action with Agentic AI and Graph Analytics | [From IoT to Intelligent Action](./From%20IoT%20to%20Intelligent%20Action) |
-| 19 November | Building Blocks for Smart Data Applications | [Building Blocks for Smart Apps](./Building%20Blocks%20for%20Smart%20Apps) |
+| 18 November | Spatial AI in Python: Unlocking Machine Learning for Geospatial Intelligence (workshop) | [Spatial AI Workshop](./Spatial%20AI%20Workshop) || 19 November | Building Blocks for Smart Data Applications | [Building Blocks for Smart Apps](./Building%20Blocks%20for%20Smart%20Apps) |
 | 19 November | Hänsel und Gretel im Geodatenwald | [Geodatenwald](./Geodatenwald) |
 | 19 November | Temporal Data Lineage and Impact Analysis in Oracle Database | [Temporal Data Lineage and Impact Analysis](./Temporal%20Data%20Lineage%20and%20Impact%20Analysis) |
-| – | Spatial AI in Python: Unlocking Machine Learning for Geospatial Intelligence (workshop) | [Spatial AI Workshop](./Spatial%20AI%20Workshop) |
 
 ## From IoT Data to Intelligent Action with Agentic AI and Graph Analytics
 
